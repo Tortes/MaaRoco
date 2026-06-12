@@ -108,6 +108,14 @@ def install_resource():
         install_path / "resource",
         dirs_exist_ok=True,
     )
+    for dirname in ("tasks", "locales"):
+        source_dir = working_dir / "assets" / dirname
+        if source_dir.exists():
+            shutil.copytree(
+                source_dir,
+                install_path / dirname,
+                dirs_exist_ok=True,
+            )
     shutil.copy2(
         working_dir / "assets" / "interface.json",
         install_path,
@@ -133,11 +141,76 @@ def install_chores():
     )
 
 
-def install_agent():
-    shutil.copytree(
-        working_dir / "agent",
-        install_path / "agent",
-        dirs_exist_ok=True,
+def install_default_config():
+    config_dir = install_path / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config = {
+        "CurrentLanguage": "zh-CN",
+        "ResourceUpdateChannelInitialized": True,
+        "EnableAutoUpdateResource": False,
+        "AutoUpdateResource": False,
+        "EnableAutoUpdateMFA": False,
+        "EnableCheckVersion": False,
+        "DownloadSourceIndex": 0,
+        "ResourceUpdateChannelIndex": 0,
+        "EnableEdit": False,
+        "HasCompletedFirstUseTutorial": True,
+        "UI.HasCompletedFirstUseTutorial": True,
+        "LinkStart": "F11",
+    }
+    with open(config_dir / "config.json", "w", encoding="utf-8") as f:
+        jsonc.dump(config, f, ensure_ascii=False, indent=2)
+
+
+def remove_legacy_files():
+    shutil.rmtree(install_path / "agent", ignore_errors=True)
+    stale_log_script = install_path / "resource" / "tools" / "continuous_throw_log.ps1"
+    if stale_log_script.exists():
+        stale_log_script.unlink()
+    tools_dir = install_path / "resource" / "tools"
+    if tools_dir.exists() and not any(tools_dir.iterdir()):
+        tools_dir.rmdir()
+
+
+def install_launcher():
+    source_exe = install_path / "MFAAvalonia.exe"
+    target_exe = install_path / "MaaRoco.exe"
+    if source_exe.exists():
+        shutil.copy2(source_exe, target_exe)
+
+    launcher = install_path / "MaaRoco.cmd"
+    launcher.write_text(
+        "\n".join(
+            [
+                "@echo off",
+                "cd /d %~dp0",
+                "net session >nul 2>&1",
+                "if %errorlevel% neq 0 (",
+                "    powershell -NoProfile -ExecutionPolicy Bypass -Command \"Start-Process -FilePath '%~dp0MaaRoco.exe' -WorkingDirectory '%~dp0' -Verb RunAs\"",
+                "    exit /b",
+                ")",
+                "start \"\" \"%~dp0MaaRoco.exe\"",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = install_path / "MaaRoco.exe.manifest"
+    manifest.write_text(
+        """<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>
+<assembly xmlns=\"urn:schemas-microsoft-com:asm.v1\" manifestVersion=\"1.0\">
+  <assemblyIdentity version=\"1.0.0.0\" processorArchitecture=\"*\" name=\"MaaRoco\" type=\"win32\"/>
+  <trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level=\"requireAdministrator\" uiAccess=\"false\"/>
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
+""",
+        encoding="utf-8",
     )
 
 
@@ -145,6 +218,8 @@ if __name__ == "__main__":
     install_deps()
     install_resource()
     install_chores()
-    install_agent()
+    install_default_config()
+    remove_legacy_files()
+    install_launcher()
 
     print(f"Install to {install_path} successfully.")
