@@ -1,0 +1,334 @@
+{
+    "task": [
+        {
+            "name": "ContinuousThrow",
+            "label": "$task.ContinuousThrow.label",
+            "entry": "ContinuousThrowStart",
+            "default_check": true,
+            "description": "$task.ContinuousThrow.description",
+            "option": [
+                "ContinuousThrowClickParams",
+                "ContinuousThrowRunMode"
+            ],
+            "controller": [
+                "Win32-Front",
+                "Win32-Window-Background"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "ContinuousThrowClickParams": {
+            "type": "input",
+            "label": "$option.ContinuousThrowClickParams.label",
+            "description": "$option.ContinuousThrowClickParams.description",
+            "inputs": [
+                {
+                    "name": "ContinuousThrowHold",
+                    "label": "$option.ContinuousThrowClickParams.inputs.Hold.label",
+                    "description": "$option.ContinuousThrowClickParams.inputs.Hold.description",
+                    "pipeline_type": "int",
+                    "default": "50",
+                    "verify": "^(?:[1-9]\\d{0,4}|100000)$",
+                    "pattern_msg": "$option.ContinuousThrowClickParams.inputs.Hold.pattern_msg"
+                },
+                {
+                    "name": "ContinuousThrowX",
+                    "label": "$option.ContinuousThrowClickParams.inputs.X.label",
+                    "description": "$option.ContinuousThrowClickParams.inputs.X.description",
+                    "pipeline_type": "int",
+                    "default": "640",
+                    "verify": "^(?:0|[1-9]\\d{0,2}|1[01]\\d{2}|12[0-7]\\d|1280)$",
+                    "pattern_msg": "$option.ContinuousThrowClickParams.inputs.X.pattern_msg"
+                },
+                {
+                    "name": "ContinuousThrowY",
+                    "label": "$option.ContinuousThrowClickParams.inputs.Y.label",
+                    "description": "$option.ContinuousThrowClickParams.inputs.Y.description",
+                    "pipeline_type": "int",
+                    "default": "360",
+                    "verify": "^(?:0|[1-9]\\d{0,2}|[1-6]\\d{2}|7[01]\\d|720)$",
+                    "pattern_msg": "$option.ContinuousThrowClickParams.inputs.Y.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "ContinuousThrowMain": {
+                    "action": {
+                        "param": {
+                            "target": [
+                                "{ContinuousThrowX}",
+                                "{ContinuousThrowY}"
+                            ],
+                            "duration": "{ContinuousThrowHold}"
+                        }
+                    }
+                },
+                "ContinuousThrowReleaseClick": {
+                    "action": {
+                        "param": {
+                            "target": [
+                                "{ContinuousThrowX}",
+                                "{ContinuousThrowY}"
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "ContinuousThrowRunMode": {
+            "type": "select",
+            "label": "$option.ContinuousThrowRunMode.label",
+            "description": "$option.ContinuousThrowRunMode.description",
+            "default_case": "Duration",
+            "cases": [
+                {
+                    "name": "Duration",
+                    "label": "$option.ContinuousThrowRunMode.cases.Duration.label",
+                    "option": [
+                        "ContinuousThrowDurationPreset"
+                    ]
+                },
+                {
+                    "name": "Count",
+                    "label": "$option.ContinuousThrowRunMode.cases.Count.label",
+                    "option": [
+                        "ContinuousThrowCount",
+                        "ContinuousThrowCountInterval"
+                    ]
+                }
+            ]
+        },
+        "ContinuousThrowDurationPreset": {
+            "type": "select",
+            "label": "$option.ContinuousThrowDurationPreset.label",
+            "description": "$option.ContinuousThrowDurationPreset.description",
+            "default_case": "D10_I200",
+            "cases": [
+                {
+                    "name": "D10_I100",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D10_I100.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 100
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 100
+                        }
+                    }
+                },
+                {
+                    "name": "D10_I200",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D10_I200.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 200
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 50
+                        }
+                    }
+                },
+                {
+                    "name": "D10_I500",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D10_I500.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 500
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 20
+                        }
+                    }
+                },
+                {
+                    "name": "D10_I1000",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D10_I1000.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 1000
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 10
+                        }
+                    }
+                },
+                {
+                    "name": "D30_I100",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D30_I100.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 100
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 300
+                        }
+                    }
+                },
+                {
+                    "name": "D30_I200",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D30_I200.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 200
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 150
+                        }
+                    }
+                },
+                {
+                    "name": "D30_I500",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D30_I500.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 500
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 60
+                        }
+                    }
+                },
+                {
+                    "name": "D30_I1000",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D30_I1000.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 1000
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 30
+                        }
+                    }
+                },
+                {
+                    "name": "D60_I100",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D60_I100.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 100
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 600
+                        }
+                    }
+                },
+                {
+                    "name": "D60_I200",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D60_I200.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 200
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 300
+                        }
+                    }
+                },
+                {
+                    "name": "D60_I500",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D60_I500.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 500
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 120
+                        }
+                    }
+                },
+                {
+                    "name": "D60_I1000",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D60_I1000.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 1000
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 60
+                        }
+                    }
+                },
+                {
+                    "name": "D120_I200",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D120_I200.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 200
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 600
+                        }
+                    }
+                },
+                {
+                    "name": "D120_I500",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D120_I500.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 500
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 240
+                        }
+                    }
+                },
+                {
+                    "name": "D120_I1000",
+                    "label": "$option.ContinuousThrowDurationPreset.cases.D120_I1000.label",
+                    "pipeline_override": {
+                        "ContinuousThrowReleaseClick": {
+                            "post_delay": 1000
+                        },
+                        "ContinuousThrowMain": {
+                            "max_hit": 120
+                        }
+                    }
+                }
+            ]
+        },
+        "ContinuousThrowCount": {
+            "type": "input",
+            "label": "$option.ContinuousThrowCount.label",
+            "description": "$option.ContinuousThrowCount.description",
+            "inputs": [
+                {
+                    "name": "ContinuousThrowClickCount",
+                    "label": "$option.ContinuousThrowCount.inputs.ClickCount.label",
+                    "description": "$option.ContinuousThrowCount.inputs.ClickCount.description",
+                    "pipeline_type": "int",
+                    "default": "50",
+                    "verify": "^(?:[1-9]\\d{0,5})$",
+                    "pattern_msg": "$option.ContinuousThrowCount.inputs.ClickCount.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "ContinuousThrowMain": {
+                    "max_hit": "{ContinuousThrowClickCount}"
+                }
+            }
+        },
+        "ContinuousThrowCountInterval": {
+            "type": "input",
+            "label": "$option.ContinuousThrowCountInterval.label",
+            "description": "$option.ContinuousThrowCountInterval.description",
+            "inputs": [
+                {
+                    "name": "ContinuousThrowInterval",
+                    "label": "$option.ContinuousThrowCountInterval.inputs.Interval.label",
+                    "description": "$option.ContinuousThrowCountInterval.inputs.Interval.description",
+                    "pipeline_type": "int",
+                    "default": "200",
+                    "verify": "^(?:[1-9]\\d{1,5})$",
+                    "pattern_msg": "$option.ContinuousThrowCountInterval.inputs.Interval.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "ContinuousThrowReleaseClick": {
+                    "post_delay": "{ContinuousThrowInterval}"
+                }
+            }
+        }
+    }
+}
