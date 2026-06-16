@@ -11,36 +11,32 @@
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": {
-            "type": "LongPress",
+            "type": "TouchDown",
             "param": {
                 "target": [
                     640,
                     360
                 ],
-                "duration": 50,
-                "contact": 0
+                "contact": 0,
+                "pressure": 1
             }
         },
         "max_hit": 50,
-        "post_delay": 0,
+        "post_delay": 200,
         "next": [
-            "ContinuousThrowReleaseClick"
+            "ContinuousThrowRelease"
         ]
     },
-    "ContinuousThrowReleaseClick": {
+    "ContinuousThrowRelease": {
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": {
-            "type": "Click",
+            "type": "TouchUp",
             "param": {
-                "target": [
-                    640,
-                    360
-                ],
                 "contact": 0
             }
         },
-        "post_delay": 0,
+        "post_delay": 200,
         "next": [
             "ContinuousThrowMain"
         ]

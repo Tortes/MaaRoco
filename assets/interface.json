@@ -4,7 +4,7 @@
     "description": "$project.description",
     "contact": "$project.contact",
     "license": "MIT",
-    "github": "https://github.com/MaaXYZ/MaaPracticeBoilerplate",
+    "github": "https://github.com/Tortes/MaaRoco",
     "version": "0.1.0",
     "languages": {
         "zh_cn": "locales/interface/zh_cn.json",
@@ -20,7 +20,7 @@
                 "class_regex": ".*",
                 "window_regex": ".*",
                 "screencap": "ScreenDC",
-                "mouse": "SendMessageWithWindowPos",
+                "mouse": "Seize",
                 "keyboard": "PostMessage"
             },
             "permission_required": true
@@ -35,6 +35,20 @@
                 "window_regex": ".*",
                 "screencap": "PrintWindow",
                 "mouse": "SendMessageWithWindowPos",
+                "keyboard": "PostMessage"
+            },
+            "permission_required": true
+        },
+        {
+            "name": "Win32-Interception",
+            "label": "$controller.Win32-Interception.label",
+            "description": "$controller.Win32-Interception.description",
+            "type": "Win32",
+            "win32": {
+                "class_regex": ".*",
+                "window_regex": ".*",
+                "screencap": "ScreenDC",
+                "mouse": "Interception",
                 "keyboard": "PostMessage"
             },
             "permission_required": true
