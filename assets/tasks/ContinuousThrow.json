@@ -12,6 +12,99 @@
             "group": [
                 "assist"
             ]
+        },
+        {
+            "name": "RandomThrow",
+            "label": "$task.RandomThrow.label",
+            "entry": "RandomThrowStart",
+            "default_check": false,
+            "description": "$task.RandomThrow.description",
+            "option": [
+                "RandomThrowClickDuration",
+                "RandomThrowDelayRange"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
         }
-    ]
+    ],
+    "option": {
+        "RandomThrowClickDuration": {
+            "type": "input",
+            "label": "$option.RandomThrowClickDuration.label",
+            "description": "$option.RandomThrowClickDuration.description",
+            "inputs": [
+                {
+                    "name": "HoldMin",
+                    "label": "$option.RandomThrowClickDuration.inputs.HoldMin.label",
+                    "description": "$option.RandomThrowClickDuration.inputs.HoldMin.description",
+                    "pipeline_type": "int",
+                    "default": "200",
+                    "verify": "^(?:[1-9]\\d{0,4}|100000)$",
+                    "pattern_msg": "$option.RandomThrowClickDuration.inputs.HoldMin.pattern_msg"
+                },
+                {
+                    "name": "HoldMax",
+                    "label": "$option.RandomThrowClickDuration.inputs.HoldMax.label",
+                    "description": "$option.RandomThrowClickDuration.inputs.HoldMax.description",
+                    "pipeline_type": "int",
+                    "default": "500",
+                    "verify": "^(?:[1-9]\\d{0,4}|100000)$",
+                    "pattern_msg": "$option.RandomThrowClickDuration.inputs.HoldMax.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "RandomThrowClick": {
+                    "action": {
+                        "param": {
+                            "duration_range": [
+                                "{HoldMin}",
+                                "{HoldMax}"
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        "RandomThrowDelayRange": {
+            "type": "input",
+            "label": "$option.RandomThrowDelayRange.label",
+            "description": "$option.RandomThrowDelayRange.description",
+            "inputs": [
+                {
+                    "name": "DelayMin",
+                    "label": "$option.RandomThrowDelayRange.inputs.DelayMin.label",
+                    "description": "$option.RandomThrowDelayRange.inputs.DelayMin.description",
+                    "pipeline_type": "int",
+                    "default": "200",
+                    "verify": "^(?:0|[1-9]\\d{0,5})$",
+                    "pattern_msg": "$option.RandomThrowDelayRange.inputs.DelayMin.pattern_msg"
+                },
+                {
+                    "name": "DelayMax",
+                    "label": "$option.RandomThrowDelayRange.inputs.DelayMax.label",
+                    "description": "$option.RandomThrowDelayRange.inputs.DelayMax.description",
+                    "pipeline_type": "int",
+                    "default": "500",
+                    "verify": "^(?:0|[1-9]\\d{0,5})$",
+                    "pattern_msg": "$option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "RandomThrowDelay": {
+                    "action": {
+                        "param": {
+                            "duration_range": [
+                                "{DelayMin}",
+                                "{DelayMax}"
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

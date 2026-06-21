@@ -20,12 +20,12 @@ def fix_instance(path: Path) -> bool:
         data["Win32ControlMouseType"] = 512
         changed = True
 
-    # MaaFramework maps 1 << 7 to PostMessage.
+    # Keep keyboard on PostMessage for the current project-side controller preset.
     if data.get("Win32ControlKeyboardType") != 128:
         data["Win32ControlKeyboardType"] = 128
         changed = True
 
-    if not data.get("Win32ControlScreenCapType"):
+    if data.get("Win32ControlScreenCapType") != "ScreenDC":
         data["Win32ControlScreenCapType"] = "ScreenDC"
         changed = True
 
@@ -37,7 +37,7 @@ def fix_instance(path: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Fix MaaRoco instance config so Win32-Interception uses MaaFramework Interception mouse + PostMessage keyboard."
+        description="Fix MaaRoco instance config so Win32-Interception uses Interception mouse + PostMessage keyboard."
     )
     parser.add_argument(
         "instance_files",
