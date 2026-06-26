@@ -44,6 +44,6 @@
     ],
     "task": [],
     "import": [
-        "tasks/ContinuousThrow.json"
+        "tasks/RandomThrow.json"
     ]
 }
