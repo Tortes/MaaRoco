@@ -1,23 +1,10 @@
 {
     "task": [
         {
-            "name": "ContinuousThrow",
-            "label": "$task.ContinuousThrow.label",
-            "entry": "ContinuousThrowStart",
-            "default_check": true,
-            "description": "$task.ContinuousThrow.description",
-            "controller": [
-                "Win32-Interception"
-            ],
-            "group": [
-                "assist"
-            ]
-        },
-        {
             "name": "RandomThrow",
             "label": "$task.RandomThrow.label",
             "entry": "RandomThrowStart",
-            "default_check": false,
+            "default_check": true,
             "description": "$task.RandomThrow.description",
             "option": [
                 "RandomThrowClickDuration",
