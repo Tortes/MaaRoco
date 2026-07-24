@@ -15,7 +15,13 @@
 
 ## 即刻开始
 
-参考[MaaFw手册](https://github.com/MaaXYZ/MaaPracticeBoilerplate/blob/main/docs/zh_cn/develop/how_to_develop.md), 使用定制化的[MaaFramework Release](https://github.com/Tortes/MaaFramework/releases)替换原有`deps`目录框架动态库，以支持[Interception](https://github.com/oblitum/Interception)能力；需要提前下载Interception驱动，参考[Interception官方github页面](https://github.com/oblitum/Interception)；
+参考[MaaFw手册](https://github.com/MaaXYZ/MaaPracticeBoilerplate/blob/main/docs/zh_cn/develop/how_to_develop.md), 使用定制化的[MaaFramework Release](https://github.com/Tortes/MaaFramework/releases)替换原有`deps`目录框架动态库，以支持[Interception](https://github.com/oblitum/Interception)能力。
+
+### 安装 Interception 驱动
+
+`Win32-Interception` 控制器需要先安装 [Interception](https://github.com/oblitum/Interception) 驱动。请从本项目 [Latest Release](https://github.com/Tortes/MaaRoco/releases/latest) 下载 `MaaRoco-Interception-Installer.zip`，解压后以**管理员身份**运行 `tools/install_interception.cmd`。脚本会从 Interception 官方 Release 下载驱动并调用官方安装程序；安装完成后请重启 Windows。
+
+该安装脚本仅支持 Windows。Interception 是内核级输入驱动，安装和使用前请确认其风险符合你的使用场景。
 
 支持：
 - [x] 随机/固定丢球模式；
