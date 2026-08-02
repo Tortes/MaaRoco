@@ -470,6 +470,7 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
         max_relative_move=480,
         settle_delay_ms=140,
         max_target_area_percent=55,
+        throw_cooldown_ms=0,
         trajectory_base_lift_px=30,
         trajectory_distance_lift_px=12,
         trajectory_reference_height=100,

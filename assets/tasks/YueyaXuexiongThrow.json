@@ -104,8 +104,8 @@
                     "label": "$option.YueyaXuexiongThrowCooldown.inputs.ThrowCooldown.label",
                     "description": "$option.YueyaXuexiongThrowCooldown.inputs.ThrowCooldown.description",
                     "pipeline_type": "int",
-                    "default": "900",
-                    "verify": "^(?:[1-9]\\d{0,3}|10000)$",
+                    "default": "0",
+                    "verify": "^(?:0|[1-9]\\d{0,3}|10000)$",
                     "pattern_msg": "$option.YueyaXuexiongThrowCooldown.inputs.ThrowCooldown.pattern_msg"
                 }
             ],
