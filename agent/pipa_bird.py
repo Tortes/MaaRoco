@@ -507,10 +507,34 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
 
 @AgentServer.custom_action("yueya_xuexiong_explore")
 class YueyaXuexiongExplore(CustomAction):
-    """Sweep the camera with the right mouse button until detection succeeds."""
+    """Keep aiming held, scan left, center a target, throw, and repeat."""
 
-    direction = 1
-    moves_in_direction = 0
+    pointer_held = False
+    hold_started_at = 0.0
+    centered_frames = 0
+    round_number = 0
+
+    default_settings = AimSettings(
+        target_recognition="YueyaXuexiongExploreAimDetect",
+        aim_gain_percent=100,
+        center_tolerance=24,
+        max_relative_move=360,
+        settle_delay_ms=100,
+        verification_frames=2,
+        max_target_area_percent=55,
+        min_hold_ms=80,
+        throw_cooldown_ms=0,
+        trajectory_base_lift_px=0,
+        trajectory_distance_lift_px=0,
+        detection_score_min=0.70,
+        target_lock_max_shift=140,
+    )
+
+    def _reset(self) -> None:
+        self.pointer_held = False
+        self.hold_started_at = 0.0
+        self.centered_frames = 0
+        self.round_number = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -518,49 +542,129 @@ class YueyaXuexiongExplore(CustomAction):
             return False
 
         param = _json_object(argv.custom_action_param)
-        scan_step_px = _bounded_int(param.get("scan_step_px"), 180, 20, 1000)
-        settle_delay_ms = _bounded_int(param.get("settle_delay_ms"), 220, 0, 2000)
-        steps_before_reverse = _bounded_int(
-            param.get("steps_before_reverse"), 6, 1, 30
-        )
-        image = controller.cached_image
-        height, width = image.shape[:2]
-        if width <= 0 or height <= 0:
-            return False
-
-        if self.moves_in_direction >= steps_before_reverse:
-            self.direction *= -1
-            self.moves_in_direction = 0
-            _log(f"explore: reverse direction={self.direction}")
-
-        center_x, center_y = width // 2, height // 2
-        right_held = False
-        try:
-            controller.post_touch_down(center_x, center_y, contact=1).wait()
-            right_held = True
-            delta_x = self.direction * scan_step_px
-            destination_x, destination_y = _screen_point(
-                width, height, center_x + delta_x, center_y
-            )
-            controller.post_touch_move(destination_x, destination_y, contact=1).wait()
-            self.moves_in_direction += 1
-            _log(
-                f"explore: scan direction={self.direction} delta_x={delta_x} "
-                f"destination=({destination_x},{destination_y}) "
-                f"step={self.moves_in_direction}/{steps_before_reverse}"
-            )
-            if settle_delay_ms:
-                time.sleep(settle_delay_ms / 1000)
+        if bool(param.get("reset")):
+            self._reset()
+            _log("aim loop: reset; E pressed once for continuous throwing")
             return True
-        except RuntimeError:
-            _log("explore: camera sweep failed")
+
+        settings = AimSettings.from_json(
+            argv.custom_action_param, self.default_settings
+        )
+        scan_step_px = _bounded_int(param.get("scan_step_px"), 140, 20, 600)
+        aim_enter_delay_ms = _bounded_int(
+            param.get("aim_enter_delay_ms"), 120, 0, 1000
+        )
+        try:
+            image = controller.post_screencap().get(wait=True)
+            height, width = image.shape[:2]
+            if width <= 0 or height <= 0:
+                return False
+            center_x, center_y = width // 2, height // 2
+
+            if not self.pointer_held:
+                controller.post_touch_down(center_x, center_y, contact=0).wait()
+                self.pointer_held = True
+                self.hold_started_at = time.monotonic()
+                self.centered_frames = 0
+                self.round_number += 1
+                _log(
+                    f"aim loop {self.round_number}: left down at "
+                    f"crosshair=({center_x},{center_y})"
+                )
+                if aim_enter_delay_ms:
+                    time.sleep(aim_enter_delay_ms / 1000)
+                image = controller.post_screencap().get(wait=True)
+
+            detail = context.run_recognition(settings.target_recognition, image)
+            boxes = [
+                box
+                for box in _result_boxes(detail, settings.detection_score_min)
+                if _is_reasonable_target(
+                    width, height, box, settings.max_target_area_percent
+                )
+            ]
+            if not boxes:
+                self.centered_frames = 0
+                destination_x, destination_y = _screen_point(
+                    width, height, center_x - scan_step_px, center_y
+                )
+                controller.post_touch_move(
+                    destination_x, destination_y, contact=0
+                ).wait()
+                _log(
+                    f"aim loop {self.round_number}: scan left "
+                    f"delta=(-{scan_step_px},0)"
+                )
+                if settings.settle_delay_ms:
+                    time.sleep(settings.settle_delay_ms / 1000)
+                return True
+
+            box = min(
+                boxes,
+                key=lambda candidate: (
+                    (_box_center(candidate)[0] - center_x) ** 2
+                    + (_box_center(candidate)[1] - center_y) ** 2
+                ),
+            )
+            target_x, target_y = _box_center(box)
+            error_x = target_x - center_x
+            error_y = target_y - center_y
+            if (
+                abs(error_x) <= settings.center_tolerance
+                and abs(error_y) <= settings.center_tolerance
+            ):
+                self.centered_frames += 1
+                _log(
+                    f"aim loop {self.round_number}: centered "
+                    f"frame={self.centered_frames}/{settings.verification_frames} "
+                    f"target={box} error=({error_x},{error_y})"
+                )
+                if self.centered_frames < settings.verification_frames:
+                    if settings.settle_delay_ms:
+                        time.sleep(settings.settle_delay_ms / 1000)
+                    return True
+
+                remaining_hold_ms = settings.min_hold_ms - int(
+                    (time.monotonic() - self.hold_started_at) * 1000
+                )
+                if remaining_hold_ms > 0:
+                    time.sleep(remaining_hold_ms / 1000)
+                _log(
+                    f"release: target confirmed on center crosshair "
+                    f"round={self.round_number} target={box}"
+                )
+                controller.post_touch_up(contact=0).wait()
+                self.pointer_held = False
+                self.centered_frames = 0
+                if settings.throw_cooldown_ms:
+                    time.sleep(settings.throw_cooldown_ms / 1000)
+                return True
+
+            self.centered_frames = 0
+            move_x = _clamp(
+                error_x * settings.aim_gain_percent // 100,
+                settings.max_relative_move,
+            )
+            move_y = _clamp(
+                error_y * settings.aim_gain_percent // 100,
+                settings.max_relative_move,
+            )
+            destination_x, destination_y = _screen_point(
+                width, height, center_x + move_x, center_y + move_y
+            )
+            controller.post_touch_move(
+                destination_x, destination_y, contact=0
+            ).wait()
+            _log(
+                f"aim loop {self.round_number}: center target={box} "
+                f"error=({error_x},{error_y}) delta=({move_x},{move_y})"
+            )
+            if settings.settle_delay_ms:
+                time.sleep(settings.settle_delay_ms / 1000)
+            return True
+        except (RuntimeError, ValueError, TypeError):
+            _log("aim loop: input or recognition failed; keeping task recoverable")
             return False
-        finally:
-            if right_held:
-                try:
-                    controller.post_touch_up(contact=1).wait()
-                except RuntimeError:
-                    pass
 
 
 def _json_object(raw: str) -> dict[str, object]:

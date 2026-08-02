@@ -26,8 +26,7 @@
             "description": "$task.YueyaXuexiongExploreThrow.description",
             "option": [
                 "YueyaXuexiongAimGain",
-                "YueyaXuexiongCenterTolerance",
-                "YueyaXuexiongThrowCooldown"
+                "YueyaXuexiongCenterTolerance"
             ],
             "controller": [
                 "Win32-Interception"
@@ -59,7 +58,7 @@
                         "aim_gain_percent": "{AimGainPercent}"
                     }
                 },
-                "YueyaXuexiongExploreThrowDetect": {
+                "YueyaXuexiongExploreAimLoop": {
                     "custom_action_param": {
                         "aim_gain_percent": "{AimGainPercent}"
                     }
@@ -87,7 +86,7 @@
                         "center_tolerance": "{CenterTolerance}"
                     }
                 },
-                "YueyaXuexiongExploreThrowDetect": {
+                "YueyaXuexiongExploreAimLoop": {
                     "custom_action_param": {
                         "center_tolerance": "{CenterTolerance}"
                     }
@@ -111,11 +110,6 @@
             ],
             "pipeline_override": {
                 "YueyaXuexiongDetect": {
-                    "custom_action_param": {
-                        "throw_cooldown_ms": "{ThrowCooldown}"
-                    }
-                },
-                "YueyaXuexiongExploreThrowDetect": {
                     "custom_action_param": {
                         "throw_cooldown_ms": "{ThrowCooldown}"
                     }
