@@ -13,6 +13,8 @@
     "task.PipaBirdThrow.description": "按一次 E 进入投球状态；持续检测噼啪鸟，左键按下后校正准星，连续两帧确认目标中心位于准星范围才松开投球。停止任务后结束。需要 pipa_bird.onnx 模型。",
     "task.YueyaXuexiongThrow.label": "月牙雪熊蓝色瞄准投球",
     "task.YueyaXuexiongThrow.description": "按一次 E 进入投球状态；持续识别月牙雪熊的饱和蓝色区域，连续确认目标居中才投球。停止任务后结束。",
+    "task.YueyaXuexiongExploreThrow.label": "月牙雪熊探索投球",
+    "task.YueyaXuexiongExploreThrow.description": "先用右键左右环顾；发现高置信月牙雪熊后按一次 E 进入投球状态，再瞄准投球。停止任务后结束。",
     "option.PipaBirdAimGain.label": "瞄准移动比例",
     "option.PipaBirdAimGain.description": "目标偏差转换为相对鼠标移动量的比例。默认 100%，需按游戏灵敏度校准。",
     "option.PipaBirdAimGain.inputs.AimGainPercent.label": "移动比例（%）",

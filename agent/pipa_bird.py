@@ -477,6 +477,60 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
     )
 
 
+@AgentServer.custom_action("yueya_xuexiong_explore")
+class YueyaXuexiongExplore(CustomAction):
+    """Sweep the camera with the right mouse button until detection succeeds."""
+
+    direction = 1
+    moves_in_direction = 0
+
+    def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
+        controller = context.tasker.controller
+        if controller is None:
+            return False
+
+        param = _json_object(argv.custom_action_param)
+        scan_step_px = _bounded_int(param.get("scan_step_px"), 180, 20, 1000)
+        settle_delay_ms = _bounded_int(param.get("settle_delay_ms"), 220, 0, 2000)
+        steps_before_reverse = _bounded_int(
+            param.get("steps_before_reverse"), 6, 1, 30
+        )
+        image = controller.cached_image
+        height, width = image.shape[:2]
+        if width <= 0 or height <= 0:
+            return False
+
+        if self.moves_in_direction >= steps_before_reverse:
+            self.direction *= -1
+            self.moves_in_direction = 0
+            _log(f"explore: reverse direction={self.direction}")
+
+        center_x, center_y = width // 2, height // 2
+        right_held = False
+        try:
+            controller.post_touch_down(center_x, center_y, contact=1).wait()
+            right_held = True
+            delta_x = self.direction * scan_step_px
+            controller.post_relative_move(delta_x, 0).wait()
+            self.moves_in_direction += 1
+            _log(
+                f"explore: scan direction={self.direction} delta_x={delta_x} "
+                f"step={self.moves_in_direction}/{steps_before_reverse}"
+            )
+            if settle_delay_ms:
+                time.sleep(settle_delay_ms / 1000)
+            return True
+        except RuntimeError:
+            _log("explore: camera sweep failed")
+            return False
+        finally:
+            if right_held:
+                try:
+                    controller.post_touch_up(contact=1).wait()
+                except RuntimeError:
+                    pass
+
+
 def _json_object(raw: str) -> dict[str, object]:
     try:
         value = json.loads(raw) if raw else {}

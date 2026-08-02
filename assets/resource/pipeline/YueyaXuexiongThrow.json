@@ -48,5 +48,93 @@
         "next": [
             "YueyaXuexiongDetect"
         ]
+    },
+    "YueyaXuexiongExploreStart": {
+        "recognition": "DirectHit",
+        "next": [
+            "YueyaXuexiongExploreDetect"
+        ]
+    },
+    "YueyaXuexiongExploreDetect": {
+        "recognition": "NeuralNetworkDetect",
+        "model": "yueya_xuexiong.onnx",
+        "labels": [
+            "YueyaXuexiong"
+        ],
+        "expected": 0,
+        "threshold": 0.6,
+        "order_by": "Score",
+        "rate_limit": 100,
+        "next": [
+            "YueyaXuexiongExploreThrowStart"
+        ],
+        "on_error": [
+            "YueyaXuexiongExploreScan"
+        ]
+    },
+    "YueyaXuexiongExploreScan": {
+        "recognition": "DirectHit",
+        "action": "Custom",
+        "custom_action": "yueya_xuexiong_explore",
+        "custom_action_param": {
+            "scan_step_px": 180,
+            "settle_delay_ms": 220,
+            "steps_before_reverse": 6
+        },
+        "next": [
+            "YueyaXuexiongExploreDetect"
+        ],
+        "on_error": [
+            "YueyaXuexiongExploreDetect"
+        ]
+    },
+    "YueyaXuexiongExploreThrowStart": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 69
+            }
+        },
+        "post_delay": 300,
+        "next": [
+            "YueyaXuexiongExploreThrowDetect"
+        ]
+    },
+    "YueyaXuexiongExploreThrowDetect": {
+        "recognition": "NeuralNetworkDetect",
+        "model": "yueya_xuexiong.onnx",
+        "labels": [
+            "YueyaXuexiong"
+        ],
+        "expected": 0,
+        "threshold": 0.6,
+        "order_by": "Score",
+        "rate_limit": 100,
+        "timeout": -1,
+        "action": "Custom",
+        "custom_action": "yueya_xuexiong_aim_and_throw",
+        "custom_action_param": {
+            "target_recognition": "YueyaXuexiongExploreThrowDetect",
+            "aim_gain_percent": 100,
+            "center_tolerance": 24,
+            "max_aim_attempts": 4,
+            "max_relative_move": 480,
+            "settle_delay_ms": 140,
+            "verification_frames": 2,
+            "max_target_area_percent": 55,
+            "min_hold_ms": 80,
+            "throw_cooldown_ms": 900,
+            "trajectory_base_lift_px": 30,
+            "trajectory_distance_lift_px": 12,
+            "trajectory_reference_height": 100,
+            "detection_score_min": 0.6
+        },
+        "on_error": [
+            "YueyaXuexiongExploreScan"
+        ],
+        "next": [
+            "YueyaXuexiongExploreThrowDetect"
+        ]
     }
 }

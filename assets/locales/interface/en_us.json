@@ -13,6 +13,8 @@
     "task.PipaBirdThrow.description": "Presses E once, continuously detects Pipa Birds, holds the left button while aiming, and releases only after two centered target checks. Stops when the task is stopped. Requires the pipa_bird.onnx model.",
     "task.YueyaXuexiongThrow.label": "Yueya Snow Bear Blue Aim Throw",
     "task.YueyaXuexiongThrow.description": "Presses E once, continuously detects saturated blue Yueya Snow Bear regions, and releases only after consecutive centered target checks. Stops when the task is stopped.",
+    "task.YueyaXuexiongExploreThrow.label": "Yueya Snow Bear Explore Throw",
+    "task.YueyaXuexiongExploreThrow.description": "Sweeps left and right with the right mouse button, presses E once after finding a high-confidence Yueya Snow Bear, then aims and throws. Stops when the task is stopped.",
     "option.PipaBirdAimGain.label": "Aim Movement Ratio",
     "option.PipaBirdAimGain.description": "Converts target offset into relative mouse movement. Calibrate it for the in-game sensitivity.",
     "option.PipaBirdAimGain.inputs.AimGainPercent.label": "Movement ratio (%)",

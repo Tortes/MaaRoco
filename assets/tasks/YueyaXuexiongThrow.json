@@ -17,6 +17,24 @@
             "group": [
                 "assist"
             ]
+        },
+        {
+            "name": "YueyaXuexiongExploreThrow",
+            "label": "$task.YueyaXuexiongExploreThrow.label",
+            "entry": "YueyaXuexiongExploreStart",
+            "default_check": false,
+            "description": "$task.YueyaXuexiongExploreThrow.description",
+            "option": [
+                "YueyaXuexiongAimGain",
+                "YueyaXuexiongCenterTolerance",
+                "YueyaXuexiongThrowCooldown"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
         }
     ],
     "option": {
@@ -37,6 +55,11 @@
             ],
             "pipeline_override": {
                 "YueyaXuexiongDetect": {
+                    "custom_action_param": {
+                        "aim_gain_percent": "{AimGainPercent}"
+                    }
+                },
+                "YueyaXuexiongExploreThrowDetect": {
                     "custom_action_param": {
                         "aim_gain_percent": "{AimGainPercent}"
                     }
@@ -63,6 +86,11 @@
                     "custom_action_param": {
                         "center_tolerance": "{CenterTolerance}"
                     }
+                },
+                "YueyaXuexiongExploreThrowDetect": {
+                    "custom_action_param": {
+                        "center_tolerance": "{CenterTolerance}"
+                    }
                 }
             }
         },
@@ -83,6 +111,11 @@
             ],
             "pipeline_override": {
                 "YueyaXuexiongDetect": {
+                    "custom_action_param": {
+                        "throw_cooldown_ms": "{ThrowCooldown}"
+                    }
+                },
+                "YueyaXuexiongExploreThrowDetect": {
                     "custom_action_param": {
                         "throw_cooldown_ms": "{ThrowCooldown}"
                     }
