@@ -21,7 +21,7 @@
                 "window_regex": ".*",
                 "screencap": "ScreenDC",
                 "mouse": "Interception",
-                "keyboard": "PostMessage"
+                "keyboard": "Interception"
             },
             "permission_required": true
         }
@@ -35,6 +35,12 @@
             ]
         }
     ],
+    "agent": {
+        "child_exec": "python",
+        "child_args": [
+            "./agent/main.py"
+        ]
+    },
     "group": [
         {
             "name": "assist",
@@ -44,6 +50,8 @@
     ],
     "task": [],
     "import": [
-        "tasks/RandomThrow.json"
+        "tasks/RandomThrow.json",
+        "tasks/PipaBirdThrow.json",
+        "tasks/YueyaXuexiongThrow.json"
     ]
 }

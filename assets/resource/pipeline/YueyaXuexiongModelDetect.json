@@ -1,0 +1,13 @@
+{
+    "YueyaXuexiongModelDetect": {
+        "recognition": "NeuralNetworkDetect",
+        "model": "yueya_xuexiong.onnx",
+        "labels": [
+            "YueyaXuexiong"
+        ],
+        "expected": 0,
+        "threshold": 0.35,
+        "order_by": "Score",
+        "timeout": 0
+    }
+}

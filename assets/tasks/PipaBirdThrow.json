@@ -1,0 +1,93 @@
+{
+    "task": [
+        {
+            "name": "PipaBirdThrow",
+            "label": "$task.PipaBirdThrow.label",
+            "entry": "PipaBirdThrowStart",
+            "default_check": false,
+            "description": "$task.PipaBirdThrow.description",
+            "option": [
+                "PipaBirdAimGain",
+                "PipaBirdCenterTolerance",
+                "PipaBirdThrowCooldown"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "PipaBirdAimGain": {
+            "type": "input",
+            "label": "$option.PipaBirdAimGain.label",
+            "description": "$option.PipaBirdAimGain.description",
+            "inputs": [
+                {
+                    "name": "AimGainPercent",
+                    "label": "$option.PipaBirdAimGain.inputs.AimGainPercent.label",
+                    "description": "$option.PipaBirdAimGain.inputs.AimGainPercent.description",
+                    "pipeline_type": "int",
+                    "default": "100",
+                    "verify": "^(?:[1-9]\\d?|[12]\\d{2}|300)$",
+                    "pattern_msg": "$option.PipaBirdAimGain.inputs.AimGainPercent.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "PipaBirdDetect": {
+                    "custom_action_param": {
+                        "aim_gain_percent": "{AimGainPercent}"
+                    }
+                }
+            }
+        },
+        "PipaBirdCenterTolerance": {
+            "type": "input",
+            "label": "$option.PipaBirdCenterTolerance.label",
+            "description": "$option.PipaBirdCenterTolerance.description",
+            "inputs": [
+                {
+                    "name": "CenterTolerance",
+                    "label": "$option.PipaBirdCenterTolerance.inputs.CenterTolerance.label",
+                    "description": "$option.PipaBirdCenterTolerance.inputs.CenterTolerance.description",
+                    "pipeline_type": "int",
+                    "default": "24",
+                    "verify": "^(?:[1-9]|[1-9]\\d|1\\d{2}|200)$",
+                    "pattern_msg": "$option.PipaBirdCenterTolerance.inputs.CenterTolerance.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "PipaBirdDetect": {
+                    "custom_action_param": {
+                        "center_tolerance": "{CenterTolerance}"
+                    }
+                }
+            }
+        },
+        "PipaBirdThrowCooldown": {
+            "type": "input",
+            "label": "$option.PipaBirdThrowCooldown.label",
+            "description": "$option.PipaBirdThrowCooldown.description",
+            "inputs": [
+                {
+                    "name": "ThrowCooldown",
+                    "label": "$option.PipaBirdThrowCooldown.inputs.ThrowCooldown.label",
+                    "description": "$option.PipaBirdThrowCooldown.inputs.ThrowCooldown.description",
+                    "pipeline_type": "int",
+                    "default": "900",
+                    "verify": "^(?:[1-9]\\d{0,3}|10000)$",
+                    "pattern_msg": "$option.PipaBirdThrowCooldown.inputs.ThrowCooldown.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "PipaBirdDetect": {
+                    "custom_action_param": {
+                        "throw_cooldown_ms": "{ThrowCooldown}"
+                    }
+                }
+            }
+        }
+    }
+}

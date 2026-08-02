@@ -452,3 +452,9 @@ tools/ImageCropper/**/*.png
 
 config
 debug
+yolo11n.pt
+
+# Local ML training artifacts
+datasets/
+runs/
+.venv/

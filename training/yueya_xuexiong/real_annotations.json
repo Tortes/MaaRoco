@@ -1,0 +1,30 @@
+{
+  "database": {
+    "Snipaste_2026-07-29_22-13-07.png": [[16, 81, 386, 251]],
+    "Snipaste_2026-07-29_22-23-22.png": [[174, 137, 475, 251], [563, 198, 645, 269]],
+    "Snipaste_2026-07-29_22-27-59.png": [[399, 259, 712, 380], [781, 377, 897, 461]]
+  },
+  "on_error": {
+    "2026.07.29-22.46.45.875_YueyaXuexiongBlueDetect.png": [[90, 225, 320, 360], [320, 180, 600, 320]]
+  },
+  "video": {
+    "BV1Y61hBxEhS_p1_p1_00048.jpg": [[770, 275, 955, 458]],
+    "BV1Y61hBxEhS_p1_p1_00058.jpg": [[748, 292, 940, 458]],
+    "BV1Y61hBxEhS_p1_p1_00062.jpg": [[370, 178, 932, 638]]
+  },
+  "negatives": {
+    "database": [
+      "bad_case_blue_grass.png"
+    ],
+    "on_error": [
+      "2026.08.02-11.59.09.857_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.13.852_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.18.890_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.22.235_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.29.21_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.36.388_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.43.535_YueyaXuexiongDetect.png",
+      "2026.08.02-11.59.51.765_YueyaXuexiongDetect.png"
+    ]
+  }
+}

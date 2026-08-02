@@ -130,6 +130,12 @@ def install_resource():
         jsonc.dump(interface, f, ensure_ascii=False, indent=4)
 
 
+def install_agent():
+    source_dir = working_dir / "agent"
+    if source_dir.exists():
+        shutil.copytree(source_dir, install_path / "agent", dirs_exist_ok=True)
+
+
 def install_chores():
     shutil.copy2(
         working_dir / "README.md",
@@ -161,9 +167,28 @@ def install_default_config():
     with open(config_dir / "config.json", "w", encoding="utf-8") as f:
         jsonc.dump(config, f, ensure_ascii=False, indent=2)
 
+    instance_dir = config_dir / "instances"
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    instance_path = instance_dir / "default.json"
+    instance = {}
+    if instance_path.exists():
+        with open(instance_path, "r", encoding="utf-8") as f:
+            instance = jsonc.load(f)
+
+    instance.update(
+        {
+            "CurrentControllerName": "Win32-Interception",
+            "CurrentController": 1,
+            "Win32ControlMouseType": 512,
+            "Win32ControlKeyboardType": 512,
+            "Win32ControlScreenCapType": "ScreenDC",
+        }
+    )
+    with open(instance_path, "w", encoding="utf-8") as f:
+        jsonc.dump(instance, f, ensure_ascii=False, indent=2)
+
 
 def remove_legacy_files():
-    shutil.rmtree(install_path / "agent", ignore_errors=True)
     stale_log_script = install_path / "resource" / "tools" / "continuous_throw_log.ps1"
     if stale_log_script.exists():
         stale_log_script.unlink()
@@ -217,6 +242,7 @@ def install_launcher():
 if __name__ == "__main__":
     install_deps()
     install_resource()
+    install_agent()
     install_chores()
     install_default_config()
     remove_legacy_files()

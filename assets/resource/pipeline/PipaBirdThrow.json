@@ -1,0 +1,47 @@
+{
+    "PipaBirdThrowStart": {
+        "recognition": "DirectHit",
+        "pre_delay": 0,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 69
+            }
+        },
+        "post_delay": 300,
+        "next": [
+            "PipaBirdDetect"
+        ]
+    },
+    "PipaBirdDetect": {
+        "recognition": "NeuralNetworkDetect",
+      "model": "pipa_bird.onnx",
+        "labels": [
+            "PipaBird"
+        ],
+        "expected": 0,
+        "threshold": 0.1,
+        "order_by": "Score",
+        "rate_limit": 150,
+        "timeout": -1,
+        "action": "Custom",
+        "custom_action": "pipa_bird_aim_and_throw",
+        "custom_action_param": {
+            "aim_gain_percent": 100,
+            "center_tolerance": 24,
+            "max_aim_attempts": 4,
+            "max_relative_move": 480,
+            "settle_delay_ms": 320,
+            "verification_frames": 2,
+            "max_target_area_percent": 30,
+            "min_hold_ms": 80,
+            "throw_cooldown_ms": 900
+        },
+        "on_error": [
+            "PipaBirdDetect"
+        ],
+        "next": [
+            "PipaBirdDetect"
+        ]
+    }
+}
