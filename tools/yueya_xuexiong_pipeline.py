@@ -89,6 +89,7 @@ def bootstrap_sources(_: argparse.Namespace) -> None:
     annotations = json.loads(annotation_path.read_text(encoding="utf-8"))
     database_dir = REPO_ROOT.parent / "database" / "yueyaxuexiong"
     error_dir = REPO_ROOT / "install" / "debug" / "on_error"
+    live_dir = REPO_ROOT / "install" / "debug" / "live"
     real_dir = SOURCES / "real"
     negative_dir = SOURCES / "negatives"
     background_dir = SOURCES / "backgrounds"
@@ -110,6 +111,12 @@ def bootstrap_sources(_: argparse.Namespace) -> None:
     review_dir = SOURCES / "review"
     for filename, boxes in annotations.get("video", {}).items():
         source = review_dir / filename
+        if not source.exists():
+            raise FileNotFoundError(source)
+        _copy_labeled_image(source, real_dir / filename, boxes)
+        copied += 1
+    for filename, boxes in annotations.get("live", {}).items():
+        source = live_dir / filename
         if not source.exists():
             raise FileNotFoundError(source)
         _copy_labeled_image(source, real_dir / filename, boxes)
