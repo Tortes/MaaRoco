@@ -26,6 +26,7 @@ class AimSettings:
     trajectory_base_lift_px: int = 0
     trajectory_distance_lift_px: int = 0
     trajectory_reference_height: int = 100
+    detection_score_min: float = 0.35
 
     @classmethod
     def from_json(
@@ -64,6 +65,9 @@ class AimSettings:
             ),
             trajectory_reference_height=_bounded_int(
                 value.get("trajectory_reference_height"), defaults.trajectory_reference_height, 20, 1000
+            ),
+            detection_score_min=_bounded_float(
+                value.get("detection_score_min"), defaults.detection_score_min, 0.01, 0.99
             ),
         )
 
@@ -104,17 +108,17 @@ def _aim_point(
     return target_x, max(0, target_y - vertical_lift), vertical_lift
 
 
-def _is_aim_point_centered(
-    width: int, height: int, box: tuple[int, int, int, int], settings: AimSettings
+def _is_aim_point_at_pointer(
+    pointer_x: int, pointer_y: int, box: tuple[int, int, int, int], settings: AimSettings
 ) -> bool:
     aim_x, aim_y, _ = _aim_point(box, settings)
     return (
-        abs(aim_x - width // 2) <= settings.center_tolerance
-        and abs(aim_y - height // 2) <= settings.center_tolerance
+        abs(aim_x - pointer_x) <= settings.center_tolerance
+        and abs(aim_y - pointer_y) <= settings.center_tolerance
     )
 
 
-def _result_boxes(detail) -> list[tuple[int, int, int, int]]:
+def _result_boxes(detail, min_score: float = 0.35) -> list[tuple[int, int, int, int]]:
     """Return Maa neural-network candidates with their normal result shape."""
 
     if not detail:
@@ -123,7 +127,7 @@ def _result_boxes(detail) -> list[tuple[int, int, int, int]]:
     boxes = []
     for result in results:
         score = float(getattr(result, "score", 0.0))
-        if score >= 0.35:
+        if score >= min_score:
             box = tuple(int(value) for value in result.box)
             if len(box) == 4 and box[2] > 0 and box[3] > 0:
                 boxes.append(box)
@@ -133,11 +137,11 @@ def _result_boxes(detail) -> list[tuple[int, int, int, int]]:
 
 
 def _select_tracked_box(
-    detail, expected_center: tuple[float, float] | None = None
+    detail, expected_center: tuple[float, float] | None = None, min_score: float = 0.35
 ) -> tuple[int, int, int, int] | None:
     """Keep following one detection instead of changing to a screen-edge pet."""
 
-    boxes = _result_boxes(detail)
+    boxes = _result_boxes(detail, min_score)
     if not boxes:
         return None
     if expected_center is None:
@@ -290,7 +294,7 @@ class PipaBirdAimAndThrow(CustomAction):
             if not detail or not detail.hit or not detail.best_result:
                 _log("preflight: target not found; retrying recognition")
                 return False
-            box = _select_tracked_box(detail)
+            box = _select_tracked_box(detail, min_score=settings.detection_score_min)
             if box is None:
                 _log("preflight: no usable target box; retrying recognition")
                 return False
@@ -310,7 +314,9 @@ class PipaBirdAimAndThrow(CustomAction):
             if not detail or not detail.hit or not detail.best_result:
                 _log("preflight: target lost before button down")
                 return False
-            confirmed_box = _select_tracked_box(detail, _box_center(box))
+            confirmed_box = _select_tracked_box(
+                detail, _box_center(box), settings.detection_score_min
+            )
             if confirmed_box is None:
                 _log("preflight: target has no usable box before button down")
                 return False
@@ -335,10 +341,10 @@ class PipaBirdAimAndThrow(CustomAction):
                     return False
 
                 target_x, target_y, vertical_lift = _aim_point(box, settings)
-                error_x = target_x - width // 2
-                error_y = target_y - height // 2
+                error_x = target_x - pointer_x
+                error_y = target_y - pointer_y
 
-                if _is_aim_point_centered(width, height, box, settings):
+                if _is_aim_point_at_pointer(pointer_x, pointer_y, box, settings):
                     _log(
                         f"verify candidate: target={box} aim=({target_x},{target_y}) "
                         f"lift={vertical_lift}"
@@ -352,7 +358,9 @@ class PipaBirdAimAndThrow(CustomAction):
                         if not detail or not detail.hit or not detail.best_result:
                             _log(f"verify {verified + 1}: target lost")
                             return False
-                        updated_box = _select_tracked_box(detail, _box_center(box))
+                        updated_box = _select_tracked_box(
+                            detail, _box_center(box), settings.detection_score_min
+                        )
                         if updated_box is None or not _is_same_target(box, updated_box):
                             _log(f"verify {verified + 1}: target lock lost")
                             return False
@@ -363,7 +371,9 @@ class PipaBirdAimAndThrow(CustomAction):
                         ):
                             _log(f"verify {verified + 1}: rejected oversized target={box}")
                             return False
-                        if not _is_aim_point_centered(width, height, box, settings):
+                        if not _is_aim_point_at_pointer(
+                            pointer_x, pointer_y, box, settings
+                        ):
                             _log(
                                 f"verify {verified + 1}: target moved off aim point target={box}"
                             )
@@ -415,7 +425,9 @@ class PipaBirdAimAndThrow(CustomAction):
                 if not detail or not detail.hit or not detail.best_result:
                     _log("post-move: target lost; aborting throw")
                     return False
-                updated_box = _select_tracked_box(detail, _box_center(box))
+                updated_box = _select_tracked_box(
+                    detail, _box_center(box), settings.detection_score_min
+                )
                 if updated_box is None:
                     _log("post-move: target has no usable box; aborting throw")
                     return False
@@ -461,6 +473,7 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
         trajectory_base_lift_px=30,
         trajectory_distance_lift_px=12,
         trajectory_reference_height=100,
+        detection_score_min=0.60,
     )
 
 

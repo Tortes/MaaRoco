@@ -20,7 +20,7 @@
             "YueyaXuexiong"
         ],
         "expected": 0,
-        "threshold": 0.35,
+        "threshold": 0.6,
         "order_by": "Score",
         "rate_limit": 100,
         "timeout": -1,
@@ -39,7 +39,8 @@
             "throw_cooldown_ms": 900,
             "trajectory_base_lift_px": 30,
             "trajectory_distance_lift_px": 12,
-            "trajectory_reference_height": 100
+            "trajectory_reference_height": 100,
+            "detection_score_min": 0.6
         },
         "on_error": [
             "YueyaXuexiongDetect"
