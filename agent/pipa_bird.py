@@ -515,6 +515,8 @@ class YueyaXuexiongExplore(CustomAction):
     round_number = 0
     target_seen = False
     lost_frames = 0
+    pointer_x = 0
+    pointer_y = 0
 
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
@@ -539,6 +541,8 @@ class YueyaXuexiongExplore(CustomAction):
         self.round_number = 0
         self.target_seen = False
         self.lost_frames = 0
+        self.pointer_x = 0
+        self.pointer_y = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -575,6 +579,8 @@ class YueyaXuexiongExplore(CustomAction):
                 self.centered_frames = 0
                 self.target_seen = False
                 self.lost_frames = 0
+                self.pointer_x = center_x
+                self.pointer_y = center_y
                 self.round_number += 1
                 _log(
                     f"aim loop {self.round_number}: left down at "
@@ -606,15 +612,15 @@ class YueyaXuexiongExplore(CustomAction):
 
                 self.target_seen = False
                 self.lost_frames = 0
-                destination_x, destination_y = _screen_point(
-                    width, height, center_x - scan_step_px, center_y
+                self.pointer_x, self.pointer_y = _screen_point(
+                    width, height, self.pointer_x - scan_step_px, self.pointer_y
                 )
                 controller.post_touch_move(
-                    destination_x, destination_y, contact=0
+                    self.pointer_x, self.pointer_y, contact=0
                 ).wait()
                 _log(
                     f"aim loop {self.round_number}: scan left "
-                    f"delta=(-{scan_step_px},0)"
+                    f"pointer=({self.pointer_x},{self.pointer_y})"
                 )
                 if settings.settle_delay_ms:
                     time.sleep(settings.settle_delay_ms / 1000)
@@ -625,13 +631,13 @@ class YueyaXuexiongExplore(CustomAction):
             box = min(
                 boxes,
                 key=lambda candidate: (
-                    (_box_center(candidate)[0] - center_x) ** 2
-                    + (_box_center(candidate)[1] - center_y) ** 2
+                    (_box_center(candidate)[0] - self.pointer_x) ** 2
+                    + (_box_center(candidate)[1] - self.pointer_y) ** 2
                 ),
             )
             target_x, target_y = _box_center(box)
-            error_x = target_x - center_x
-            error_y = target_y - center_y
+            error_x = target_x - self.pointer_x
+            error_y = target_y - self.pointer_y
             if (
                 abs(error_x) <= settings.center_tolerance
                 and abs(error_y) <= settings.center_tolerance
@@ -661,28 +667,34 @@ class YueyaXuexiongExplore(CustomAction):
                 self.centered_frames = 0
                 self.target_seen = False
                 self.lost_frames = 0
+                self.pointer_x = 0
+                self.pointer_y = 0
                 if settings.throw_cooldown_ms:
                     time.sleep(settings.throw_cooldown_ms / 1000)
                 return True
 
             self.centered_frames = 0
             move_x = _clamp(
-                -error_x * settings.aim_gain_percent // 100,
+                error_x * settings.aim_gain_percent // 100,
                 settings.max_relative_move,
             )
             move_y = _clamp(
-                -error_y * settings.aim_gain_percent // 100,
+                error_y * settings.aim_gain_percent // 100,
                 settings.max_relative_move,
             )
-            destination_x, destination_y = _screen_point(
-                width, height, center_x + move_x, center_y + move_y
+            self.pointer_x, self.pointer_y = _screen_point(
+                width,
+                height,
+                self.pointer_x + move_x,
+                self.pointer_y + move_y,
             )
             controller.post_touch_move(
-                destination_x, destination_y, contact=0
+                self.pointer_x, self.pointer_y, contact=0
             ).wait()
             _log(
                 f"aim loop {self.round_number}: center target={box} "
-                f"error=({error_x},{error_y}) delta=({move_x},{move_y})"
+                f"error=({error_x},{error_y}) delta=({move_x},{move_y}) "
+                f"pointer=({self.pointer_x},{self.pointer_y})"
             )
             if settings.settle_delay_ms:
                 time.sleep(settings.settle_delay_ms / 1000)
