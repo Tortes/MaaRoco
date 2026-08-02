@@ -513,6 +513,8 @@ class YueyaXuexiongExplore(CustomAction):
     hold_started_at = 0.0
     centered_frames = 0
     round_number = 0
+    target_seen = False
+    lost_frames = 0
 
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
@@ -535,6 +537,8 @@ class YueyaXuexiongExplore(CustomAction):
         self.hold_started_at = 0.0
         self.centered_frames = 0
         self.round_number = 0
+        self.target_seen = False
+        self.lost_frames = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -554,6 +558,9 @@ class YueyaXuexiongExplore(CustomAction):
         aim_enter_delay_ms = _bounded_int(
             param.get("aim_enter_delay_ms"), 120, 0, 1000
         )
+        lost_grace_frames = _bounded_int(
+            param.get("lost_grace_frames"), 2, 0, 10
+        )
         try:
             image = controller.post_screencap().get(wait=True)
             height, width = image.shape[:2]
@@ -566,6 +573,8 @@ class YueyaXuexiongExplore(CustomAction):
                 self.pointer_held = True
                 self.hold_started_at = time.monotonic()
                 self.centered_frames = 0
+                self.target_seen = False
+                self.lost_frames = 0
                 self.round_number += 1
                 _log(
                     f"aim loop {self.round_number}: left down at "
@@ -585,6 +594,18 @@ class YueyaXuexiongExplore(CustomAction):
             ]
             if not boxes:
                 self.centered_frames = 0
+                if self.target_seen and self.lost_frames < lost_grace_frames:
+                    self.lost_frames += 1
+                    _log(
+                        f"aim loop {self.round_number}: target temporarily lost "
+                        f"frame={self.lost_frames}/{lost_grace_frames}; hold position"
+                    )
+                    if settings.settle_delay_ms:
+                        time.sleep(settings.settle_delay_ms / 1000)
+                    return True
+
+                self.target_seen = False
+                self.lost_frames = 0
                 destination_x, destination_y = _screen_point(
                     width, height, center_x - scan_step_px, center_y
                 )
@@ -599,6 +620,8 @@ class YueyaXuexiongExplore(CustomAction):
                     time.sleep(settings.settle_delay_ms / 1000)
                 return True
 
+            self.target_seen = True
+            self.lost_frames = 0
             box = min(
                 boxes,
                 key=lambda candidate: (
@@ -636,17 +659,19 @@ class YueyaXuexiongExplore(CustomAction):
                 controller.post_touch_up(contact=0).wait()
                 self.pointer_held = False
                 self.centered_frames = 0
+                self.target_seen = False
+                self.lost_frames = 0
                 if settings.throw_cooldown_ms:
                     time.sleep(settings.throw_cooldown_ms / 1000)
                 return True
 
             self.centered_frames = 0
             move_x = _clamp(
-                error_x * settings.aim_gain_percent // 100,
+                -error_x * settings.aim_gain_percent // 100,
                 settings.max_relative_move,
             )
             move_y = _clamp(
-                error_y * settings.aim_gain_percent // 100,
+                -error_y * settings.aim_gain_percent // 100,
                 settings.max_relative_move,
             )
             destination_x, destination_y = _screen_point(

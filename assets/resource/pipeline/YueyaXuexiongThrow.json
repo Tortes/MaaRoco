@@ -101,7 +101,8 @@
             "throw_cooldown_ms": 0,
             "detection_score_min": 0.7,
             "scan_step_px": 140,
-            "aim_enter_delay_ms": 120
+            "aim_enter_delay_ms": 120,
+            "lost_grace_frames": 2
         },
         "next": [
             "YueyaXuexiongExploreAimLoop"
