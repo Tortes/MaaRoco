@@ -422,6 +422,25 @@ class PipaBirdAimAndThrow(CustomAction):
                 )
                 controller.post_touch_move(pointer_x, pointer_y, contact=0).wait()
 
+                # Entering the game's aiming mode can hide the visual features the
+                # detector uses.  Snow-bear mode already performed a stable
+                # two-frame preflight, so release as soon as its one-frame
+                # verification policy reaches the computed aim point.
+                if (
+                    settings.verification_frames == 1
+                    and _is_aim_point_at_pointer(pointer_x, pointer_y, box, settings)
+                ):
+                    remaining_hold_ms = settings.min_hold_ms - int(
+                        (time.monotonic() - hold_started_at) * 1000
+                    )
+                    if remaining_hold_ms > 0:
+                        time.sleep(remaining_hold_ms / 1000)
+                    _log("release: target confirmed after move")
+                    controller.post_touch_up(contact=0).wait()
+                    pointer_held = False
+                    throw_confirmed = True
+                    break
+
                 if settings.settle_delay_ms:
                     time.sleep(settings.settle_delay_ms / 1000)
 

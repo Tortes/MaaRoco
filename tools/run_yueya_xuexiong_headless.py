@@ -94,8 +94,23 @@ def main() -> int:
     parser.add_argument("--hwnd", type=int, help="Game window handle.")
     parser.add_argument("--class-name", default="UnrealWindow")
     parser.add_argument("--entry", default="YueyaXuexiongExploreStart")
-    parser.add_argument("--timeout", type=float, default=90, help="Seconds to wait for one confirmed throw.")
-    parser.add_argument("--max-restarts", type=int, default=3, help="Restart a pipeline that ends without throwing.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=0,
+        help="Stop after this many seconds; 0 keeps running until interrupted.",
+    )
+    parser.add_argument(
+        "--max-restarts",
+        type=int,
+        default=0,
+        help="Restart a finished pipeline this many times; 0 means indefinitely.",
+    )
+    parser.add_argument(
+        "--stop-after-throw",
+        action="store_true",
+        help="Exit after the first confirmed release (for integration testing).",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate the backend connection without posting a task.")
     args = parser.parse_args()
 
@@ -147,8 +162,10 @@ def main() -> int:
             print(json.dumps(report, ensure_ascii=False))
             return 0
 
-        deadline = time.monotonic() + args.timeout
-        for attempt in range(1, args.max_restarts + 1):
+        deadline = time.monotonic() + args.timeout if args.timeout > 0 else None
+        attempt = 0
+        while args.max_restarts == 0 or attempt < args.max_restarts:
+            attempt += 1
             job = tasker.post_task(args.entry)
             attempt_report = {"attempt": attempt, "started_at": time.time(), "events": []}
             report["attempts"].append(attempt_report)
@@ -159,20 +176,25 @@ def main() -> int:
                         attempt_report["events"].append(line)
                     if "release: target confirmed" in line:
                         report["confirmed_throw"] = True
-                        tasker.post_stop().wait()
-                        print(json.dumps(report, ensure_ascii=False))
-                        return 0
+                        if args.stop_after_throw:
+                            tasker.post_stop().wait()
+                            print(json.dumps(report, ensure_ascii=False))
+                            return 0
                 if job.done:
                     attempt_report["task_status"] = str(job.status)
                     break
                 time.sleep(0.1)
             if tasker.running:
                 tasker.post_stop().wait()
-            if time.monotonic() >= deadline:
+            if deadline is not None and time.monotonic() >= deadline:
                 break
 
         print(json.dumps(report, ensure_ascii=False))
-        return 1
+        return 0 if report["confirmed_throw"] else 1
+    except KeyboardInterrupt:
+        report["interrupted"] = True
+        print(json.dumps(report, ensure_ascii=False))
+        return 0
     finally:
         if tasker.running:
             tasker.post_stop().wait()

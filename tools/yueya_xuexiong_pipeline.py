@@ -306,13 +306,15 @@ def prepare_dataset(args: argparse.Namespace) -> None:
         )
     if stage == "mixed":
         for image in _images(SOURCES / "real"):
-            _add_pair(
-                image,
-                image.with_suffix(".txt"),
-                output,
-                _split_for(image, args.validation_percent),
-                "real",
-            )
+            split = _split_for(image, args.validation_percent)
+            for repeat in range(args.real_repeat):
+                _add_pair(
+                    image,
+                    image.with_suffix(".txt"),
+                    output,
+                    split,
+                    f"real{repeat:02d}",
+                )
         for image in _images(SOURCES / "negatives"):
             split = _split_for(image, args.validation_percent)
             for repeat in range(args.hard_negative_repeat):
@@ -552,6 +554,10 @@ def parser() -> argparse.ArgumentParser:
     dataset.add_argument(
         "--hard-negative-repeat", type=int, default=1,
         help="Repeat each hard negative in mixed training to counter a positive-heavy synthetic set.",
+    )
+    dataset.add_argument(
+        "--real-repeat", type=int, default=3,
+        help="Repeat reviewed real frames in mixed training so they outweigh synthetic composites.",
     )
     dataset.set_defaults(func=prepare_dataset)
 
