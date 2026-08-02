@@ -25,7 +25,8 @@
   },
   "negatives": {
     "database": [
-      "bad_case_blue_grass.png"
+      "bad_case_blue_grass.png",
+      "bad_case_blue_grass2.png"
     ],
     "on_error": [
       "2026.08.02-11.59.09.857_YueyaXuexiongDetect.png",
