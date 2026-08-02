@@ -507,7 +507,7 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
 
 @AgentServer.custom_action("yueya_xuexiong_explore")
 class YueyaXuexiongExplore(CustomAction):
-    """Keep aiming held, scan left, center a target, throw, and repeat."""
+    """Keep aiming held and throw only when the ready icon is visible."""
 
     pointer_held = False
     hold_started_at = 0.0
@@ -517,6 +517,7 @@ class YueyaXuexiongExplore(CustomAction):
     lost_frames = 0
     pointer_x = 0
     pointer_y = 0
+    ready_frames = 0
 
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
@@ -543,6 +544,7 @@ class YueyaXuexiongExplore(CustomAction):
         self.lost_frames = 0
         self.pointer_x = 0
         self.pointer_y = 0
+        self.ready_frames = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -564,6 +566,17 @@ class YueyaXuexiongExplore(CustomAction):
         )
         lost_grace_frames = _bounded_int(
             param.get("lost_grace_frames"), 2, 0, 10
+        )
+        ready_recognition = param.get(
+            "ready_recognition", "YueyaXuexiongAimReady"
+        )
+        if not isinstance(ready_recognition, str) or not ready_recognition:
+            ready_recognition = "YueyaXuexiongAimReady"
+        ready_match_tolerance_px = _bounded_int(
+            param.get("ready_match_tolerance_px"), 48, 8, 200
+        )
+        ready_confirmation_frames = _bounded_int(
+            param.get("ready_confirmation_frames"), 1, 1, 3
         )
         try:
             image = controller.post_screencap().get(wait=True)
@@ -589,6 +602,57 @@ class YueyaXuexiongExplore(CustomAction):
                 if aim_enter_delay_ms:
                     time.sleep(aim_enter_delay_ms / 1000)
                 image = controller.post_screencap().get(wait=True)
+
+            ready_detail = context.run_recognition(ready_recognition, image)
+            ready_boxes = _result_boxes(ready_detail, 0.0)
+            ready_box = min(
+                ready_boxes,
+                key=lambda candidate: (
+                    (_box_center(candidate)[0] - self.pointer_x) ** 2
+                    + (_box_center(candidate)[1] - self.pointer_y) ** 2
+                ),
+                default=None,
+            )
+            if ready_box is not None:
+                ready_x, ready_y = _box_center(ready_box)
+                ready_error_x = ready_x - self.pointer_x
+                ready_error_y = ready_y - self.pointer_y
+                if (
+                    abs(ready_error_x) <= ready_match_tolerance_px
+                    and abs(ready_error_y) <= ready_match_tolerance_px
+                ):
+                    self.ready_frames += 1
+                    _log(
+                        f"aim loop {self.round_number}: ready icon matched "
+                        f"frame={self.ready_frames}/{ready_confirmation_frames} "
+                        f"box={ready_box} error=({ready_error_x},{ready_error_y})"
+                    )
+                    if self.ready_frames < ready_confirmation_frames:
+                        if settings.settle_delay_ms:
+                            time.sleep(settings.settle_delay_ms / 1000)
+                        return True
+
+                    remaining_hold_ms = settings.min_hold_ms - int(
+                        (time.monotonic() - self.hold_started_at) * 1000
+                    )
+                    if remaining_hold_ms > 0:
+                        time.sleep(remaining_hold_ms / 1000)
+                    _log(
+                        f"release: target confirmed by ready icon "
+                        f"round={self.round_number} box={ready_box}"
+                    )
+                    controller.post_touch_up(contact=0).wait()
+                    self.pointer_held = False
+                    self.centered_frames = 0
+                    self.target_seen = False
+                    self.lost_frames = 0
+                    self.pointer_x = 0
+                    self.pointer_y = 0
+                    self.ready_frames = 0
+                    if settings.throw_cooldown_ms:
+                        time.sleep(settings.throw_cooldown_ms / 1000)
+                    return True
+            self.ready_frames = 0
 
             detail = context.run_recognition(settings.target_recognition, image)
             boxes = [
@@ -644,33 +708,12 @@ class YueyaXuexiongExplore(CustomAction):
             ):
                 self.centered_frames += 1
                 _log(
-                    f"aim loop {self.round_number}: centered "
-                    f"frame={self.centered_frames}/{settings.verification_frames} "
-                    f"target={box} error=({error_x},{error_y})"
+                    f"aim loop {self.round_number}: model centered but ready icon "
+                    f"absent; hold frame={self.centered_frames} target={box} "
+                    f"error=({error_x},{error_y})"
                 )
-                if self.centered_frames < settings.verification_frames:
-                    if settings.settle_delay_ms:
-                        time.sleep(settings.settle_delay_ms / 1000)
-                    return True
-
-                remaining_hold_ms = settings.min_hold_ms - int(
-                    (time.monotonic() - self.hold_started_at) * 1000
-                )
-                if remaining_hold_ms > 0:
-                    time.sleep(remaining_hold_ms / 1000)
-                _log(
-                    f"release: target confirmed on center crosshair "
-                    f"round={self.round_number} target={box}"
-                )
-                controller.post_touch_up(contact=0).wait()
-                self.pointer_held = False
-                self.centered_frames = 0
-                self.target_seen = False
-                self.lost_frames = 0
-                self.pointer_x = 0
-                self.pointer_y = 0
-                if settings.throw_cooldown_ms:
-                    time.sleep(settings.throw_cooldown_ms / 1000)
+                if settings.settle_delay_ms:
+                    time.sleep(settings.settle_delay_ms / 1000)
                 return True
 
             self.centered_frames = 0

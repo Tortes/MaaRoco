@@ -85,6 +85,13 @@
         "order_by": "Score",
         "rate_limit": 100
     },
+    "YueyaXuexiongAimReady": {
+        "recognition": "TemplateMatch",
+        "template": "yueya_xuexiong_aim_ready.png",
+        "threshold": 0.82,
+        "order_by": "Score",
+        "method": 5
+    },
     "YueyaXuexiongExploreAimLoop": {
         "recognition": "DirectHit",
         "action": "Custom",
@@ -100,6 +107,9 @@
             "min_hold_ms": 80,
             "throw_cooldown_ms": 0,
             "detection_score_min": 0.7,
+            "ready_recognition": "YueyaXuexiongAimReady",
+            "ready_match_tolerance_px": 48,
+            "ready_confirmation_frames": 1,
             "scan_step_px": 140,
             "aim_enter_delay_ms": 120,
             "lost_grace_frames": 2
