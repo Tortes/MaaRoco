@@ -520,10 +520,14 @@ class YueyaXuexiongExplore(CustomAction):
             controller.post_touch_down(center_x, center_y, contact=1).wait()
             right_held = True
             delta_x = self.direction * scan_step_px
-            controller.post_relative_move(delta_x, 0).wait()
+            destination_x, destination_y = _screen_point(
+                width, height, center_x + delta_x, center_y
+            )
+            controller.post_touch_move(destination_x, destination_y, contact=1).wait()
             self.moves_in_direction += 1
             _log(
                 f"explore: scan direction={self.direction} delta_x={delta_x} "
+                f"destination=({destination_x},{destination_y}) "
                 f"step={self.moves_in_direction}/{steps_before_reverse}"
             )
             if settle_delay_ms:
