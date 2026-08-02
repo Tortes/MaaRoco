@@ -154,8 +154,12 @@ def _select_tracked_box(
 def _is_reasonable_target(
     width: int, height: int, box: tuple[int, int, int, int], max_area_percent: int
 ) -> bool:
-    _, _, target_width, target_height = box
+    target_x, target_y, target_width, target_height = box
     if target_width <= 0 or target_height <= 0:
+        return False
+    # The lower-left HUD contains blue iconography that is never a valid
+    # throw target. Ignore it before a mouse button can be held.
+    if target_x + target_width <= width * 0.25 and target_y >= height * 0.85:
         return False
     return target_width * target_height * 100 <= width * height * max_area_percent
 
