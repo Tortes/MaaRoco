@@ -15,8 +15,6 @@ from maa.custom_recognition import CustomRecognition
 class AimSettings:
     target_recognition: str = "PipaBirdDetect"
     aim_gain_percent: int = 100
-    aim_step_px: int = 48
-    vertical_aim_step_px: int = 36
     center_tolerance: int = 24
     max_aim_attempts: int = 4
     max_relative_move: int = 480
@@ -48,10 +46,6 @@ class AimSettings:
         return cls(
             target_recognition=target_recognition,
             aim_gain_percent=_bounded_int(value.get("aim_gain_percent"), defaults.aim_gain_percent, 10, 300),
-            aim_step_px=_bounded_int(value.get("aim_step_px"), defaults.aim_step_px, 4, 200),
-            vertical_aim_step_px=_bounded_int(
-                value.get("vertical_aim_step_px"), defaults.vertical_aim_step_px, 4, 200
-            ),
             center_tolerance=_bounded_int(value.get("center_tolerance"), defaults.center_tolerance, 1, 200),
             max_aim_attempts=_bounded_int(value.get("max_aim_attempts"), defaults.max_aim_attempts, 1, 20),
             max_relative_move=_bounded_int(value.get("max_relative_move"), defaults.max_relative_move, 1, 2000),
@@ -157,14 +151,6 @@ def _select_tracked_box(
     )
 
 
-def _fixed_aim_step(error: int, tolerance: int, step: int, limit: int) -> int:
-    """Move one small, deterministic camera step towards the crosshair."""
-
-    if abs(error) <= tolerance:
-        return 0
-    return min(step, limit) if error > 0 else -min(step, limit)
-
-
 def _is_reasonable_target(
     width: int, height: int, box: tuple[int, int, int, int], max_area_percent: int
 ) -> bool:
@@ -186,7 +172,7 @@ def _is_same_target(
 
     # A deliberate camera drag can move a real target well beyond its own box.
     # Keep the shape check, but do not mistake that movement for a new target.
-    max_center_shift = max(220, max(previous_width, previous_height) * 3)
+    max_center_shift = max(800, max(previous_width, previous_height) * 3)
     if abs(current_x - previous_x) > max_center_shift:
         return False
     if abs(current_y - previous_y) > max_center_shift:
@@ -395,27 +381,23 @@ class PipaBirdAimAndThrow(CustomAction):
 
                     continue
 
-                # RocoPilot's uncalibrated controller uses a fixed, repeated
-                # step and re-detects after every drag.  Mapping the full image
-                # error to one mouse move made this game's camera overshoot.
-                step = max(4, settings.aim_step_px * settings.aim_gain_percent // 100)
-                vertical_step = max(
-                    4, settings.vertical_aim_step_px * settings.aim_gain_percent // 100
-                )
-                move_x = _fixed_aim_step(
-                    error_x, settings.center_tolerance, step,
+                # A game throw is a single held drag from the current crosshair
+                # to the detected target. Apply the complete measured error,
+                # then re-check before considering any small correction.
+                move_x = _clamp(
+                    error_x * settings.aim_gain_percent // 100,
                     settings.max_relative_move,
                 )
-                move_y = _fixed_aim_step(
-                    error_y, settings.center_tolerance, vertical_step,
+                move_y = _clamp(
+                    error_y * settings.aim_gain_percent // 100,
                     settings.max_relative_move,
                 )
                 pointer_x, pointer_y = _screen_point(
                     width, height, pointer_x + move_x, pointer_y + move_y
                 )
                 _log(
-                    f"fixed move {attempt + 1}: error=({error_x},{error_y}) "
-                    f"step=({step},{vertical_step}) "
+                    f"aim move {attempt + 1}: error=({error_x},{error_y}) "
+                    f"delta=({move_x},{move_y}) "
                     f"pointer=({pointer_x},{pointer_y}) target={box} "
                     f"aim=({target_x},{target_y}) lift={vertical_lift}"
                 )
@@ -451,7 +433,7 @@ class PipaBirdAimAndThrow(CustomAction):
         finally:
             if pointer_held:
                 try:
-                    _log("abort release: target was not confirmed")
+                    _log("cancel release: target was not confirmed")
                     controller.post_touch_up(contact=0).wait()
                 except RuntimeError:
                     pass
@@ -468,10 +450,8 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongDetect",
         aim_gain_percent=100,
-        aim_step_px=42,
-        vertical_aim_step_px=28,
-        max_aim_attempts=18,
-        max_relative_move=60,
+        max_aim_attempts=4,
+        max_relative_move=480,
         settle_delay_ms=140,
         max_target_area_percent=55,
         trajectory_base_lift_px=30,

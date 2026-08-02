@@ -29,11 +29,9 @@
         "custom_action_param": {
             "target_recognition": "YueyaXuexiongDetect",
             "aim_gain_percent": 100,
-            "aim_step_px": 42,
-            "vertical_aim_step_px": 28,
             "center_tolerance": 24,
-            "max_aim_attempts": 18,
-            "max_relative_move": 60,
+            "max_aim_attempts": 4,
+            "max_relative_move": 480,
             "settle_delay_ms": 140,
             "verification_frames": 2,
             "max_target_area_percent": 55,
