@@ -33,14 +33,15 @@
             "max_aim_attempts": 4,
             "max_relative_move": 480,
             "settle_delay_ms": 140,
-            "verification_frames": 2,
+            "verification_frames": 1,
             "max_target_area_percent": 55,
             "min_hold_ms": 80,
             "throw_cooldown_ms": 0,
             "trajectory_base_lift_px": 30,
             "trajectory_distance_lift_px": 12,
             "trajectory_reference_height": 100,
-            "detection_score_min": 0.6
+            "detection_score_min": 0.6,
+            "target_lock_max_shift": 140
         },
         "on_error": [
             "YueyaXuexiongDetect"
@@ -121,14 +122,15 @@
             "max_aim_attempts": 4,
             "max_relative_move": 480,
             "settle_delay_ms": 140,
-            "verification_frames": 2,
+            "verification_frames": 1,
             "max_target_area_percent": 55,
             "min_hold_ms": 80,
             "throw_cooldown_ms": 0,
             "trajectory_base_lift_px": 30,
             "trajectory_distance_lift_px": 12,
             "trajectory_reference_height": 100,
-            "detection_score_min": 0.6
+            "detection_score_min": 0.6,
+            "target_lock_max_shift": 140
         },
         "on_error": [
             "YueyaXuexiongExploreScan"

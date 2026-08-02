@@ -27,6 +27,7 @@ class AimSettings:
     trajectory_distance_lift_px: int = 0
     trajectory_reference_height: int = 100
     detection_score_min: float = 0.35
+    target_lock_max_shift: int = 800
 
     @classmethod
     def from_json(
@@ -68,6 +69,9 @@ class AimSettings:
             ),
             detection_score_min=_bounded_float(
                 value.get("detection_score_min"), defaults.detection_score_min, 0.01, 0.99
+            ),
+            target_lock_max_shift=_bounded_int(
+                value.get("target_lock_max_shift"), defaults.target_lock_max_shift, 20, 2000
             ),
         )
 
@@ -169,7 +173,7 @@ def _is_reasonable_target(
 
 
 def _is_same_target(
-    previous: tuple[int, int, int, int], current: tuple[int, int, int, int]
+    previous: tuple[int, int, int, int], current: tuple[int, int, int, int], max_center_shift: int = 800
 ) -> bool:
     previous_x, previous_y = _box_center(previous)
     current_x, current_y = _box_center(current)
@@ -178,9 +182,6 @@ def _is_same_target(
     if min(previous_width, previous_height, current_width, current_height) <= 0:
         return False
 
-    # A deliberate camera drag can move a real target well beyond its own box.
-    # Keep the shape check, but do not mistake that movement for a new target.
-    max_center_shift = max(800, max(previous_width, previous_height) * 3)
     if abs(current_x - previous_x) > max_center_shift:
         return False
     if abs(current_y - previous_y) > max_center_shift:
@@ -322,7 +323,9 @@ class PipaBirdAimAndThrow(CustomAction):
                 return False
             if not _is_reasonable_target(
                 width, height, confirmed_box, settings.max_target_area_percent
-            ) or not _is_same_target(box, confirmed_box):
+            ) or not _is_same_target(
+                box, confirmed_box, settings.target_lock_max_shift
+            ):
                 _log(
                     f"preflight: target unstable initial={box} confirmed={confirmed_box}"
                 )
@@ -361,7 +364,9 @@ class PipaBirdAimAndThrow(CustomAction):
                         updated_box = _select_tracked_box(
                             detail, _box_center(box), settings.detection_score_min
                         )
-                        if updated_box is None or not _is_same_target(box, updated_box):
+                        if updated_box is None or not _is_same_target(
+                            box, updated_box, settings.target_lock_max_shift
+                        ):
                             _log(f"verify {verified + 1}: target lock lost")
                             return False
                         box = updated_box
@@ -431,7 +436,9 @@ class PipaBirdAimAndThrow(CustomAction):
                 if updated_box is None:
                     _log("post-move: target has no usable box; aborting throw")
                     return False
-                if not _is_same_target(box, updated_box):
+                if not _is_same_target(
+                    box, updated_box, settings.target_lock_max_shift
+                ):
                     _log(
                         f"post-move: target switched previous={box} current={updated_box}; "
                         "aborting throw"
@@ -475,6 +482,7 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
         trajectory_distance_lift_px=12,
         trajectory_reference_height=100,
         detection_score_min=0.60,
+        target_lock_max_shift=140,
     )
 
 
