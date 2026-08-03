@@ -11,6 +11,19 @@ from maa.custom_action import CustomAction
 from maa.custom_recognition import CustomRecognition
 
 
+_interception = None
+
+
+def _relative_mouse():
+    global _interception
+    if _interception is None:
+        import interception
+
+        interception.auto_capture_devices(keyboard=False, mouse=True)
+        _interception = interception
+    return _interception
+
+
 @dataclass(frozen=True)
 class AimSettings:
     target_recognition: str = "PipaBirdDetect"
@@ -515,14 +528,12 @@ class YueyaXuexiongExplore(CustomAction):
     round_number = 0
     target_seen = False
     lost_frames = 0
-    pointer_x = 0
-    pointer_y = 0
     ready_frames = 0
 
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
         aim_gain_percent=100,
-        center_tolerance=24,
+        center_tolerance=6,
         max_relative_move=360,
         settle_delay_ms=100,
         verification_frames=2,
@@ -542,8 +553,6 @@ class YueyaXuexiongExplore(CustomAction):
         self.round_number = 0
         self.target_seen = False
         self.lost_frames = 0
-        self.pointer_x = 0
-        self.pointer_y = 0
         self.ready_frames = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -560,7 +569,12 @@ class YueyaXuexiongExplore(CustomAction):
         settings = AimSettings.from_json(
             argv.custom_action_param, self.default_settings
         )
-        scan_step_px = _bounded_int(param.get("scan_step_px"), 140, 20, 600)
+        scan_step_units = _bounded_int(
+            param.get("scan_step_units"), 80, 10, 300
+        )
+        relative_aim_step_units = _bounded_int(
+            param.get("relative_aim_step_units"), 40, 5, 200
+        )
         aim_enter_delay_ms = _bounded_int(
             param.get("aim_enter_delay_ms"), 120, 0, 1000
         )
@@ -586,18 +600,16 @@ class YueyaXuexiongExplore(CustomAction):
             center_x, center_y = width // 2, height // 2
 
             if not self.pointer_held:
-                controller.post_touch_down(center_x, center_y, contact=0).wait()
+                _relative_mouse().mouse_down("left", delay=0)
                 self.pointer_held = True
                 self.hold_started_at = time.monotonic()
                 self.centered_frames = 0
                 self.target_seen = False
                 self.lost_frames = 0
-                self.pointer_x = center_x
-                self.pointer_y = center_y
                 self.round_number += 1
                 _log(
-                    f"aim loop {self.round_number}: left down at "
-                    f"crosshair=({center_x},{center_y})"
+                    f"aim loop {self.round_number}: relative left down; "
+                    f"screen_center=({center_x},{center_y})"
                 )
                 if aim_enter_delay_ms:
                     time.sleep(aim_enter_delay_ms / 1000)
@@ -608,15 +620,15 @@ class YueyaXuexiongExplore(CustomAction):
             ready_box = min(
                 ready_boxes,
                 key=lambda candidate: (
-                    (_box_center(candidate)[0] - self.pointer_x) ** 2
-                    + (_box_center(candidate)[1] - self.pointer_y) ** 2
+                    (_box_center(candidate)[0] - center_x) ** 2
+                    + (_box_center(candidate)[1] - center_y) ** 2
                 ),
                 default=None,
             )
             if ready_box is not None:
                 ready_x, ready_y = _box_center(ready_box)
-                ready_error_x = ready_x - self.pointer_x
-                ready_error_y = ready_y - self.pointer_y
+                ready_error_x = ready_x - center_x
+                ready_error_y = ready_y - center_y
                 if (
                     abs(ready_error_x) <= ready_match_tolerance_px
                     and abs(ready_error_y) <= ready_match_tolerance_px
@@ -641,13 +653,11 @@ class YueyaXuexiongExplore(CustomAction):
                         f"release: target confirmed by ready icon "
                         f"round={self.round_number} box={ready_box}"
                     )
-                    controller.post_touch_up(contact=0).wait()
+                    _relative_mouse().mouse_up("left", delay=0)
                     self.pointer_held = False
                     self.centered_frames = 0
                     self.target_seen = False
                     self.lost_frames = 0
-                    self.pointer_x = 0
-                    self.pointer_y = 0
                     self.ready_frames = 0
                     if settings.throw_cooldown_ms:
                         time.sleep(settings.throw_cooldown_ms / 1000)
@@ -676,15 +686,10 @@ class YueyaXuexiongExplore(CustomAction):
 
                 self.target_seen = False
                 self.lost_frames = 0
-                self.pointer_x, self.pointer_y = _screen_point(
-                    width, height, self.pointer_x - scan_step_px, self.pointer_y
-                )
-                controller.post_touch_move(
-                    self.pointer_x, self.pointer_y, contact=0
-                ).wait()
+                _relative_mouse().move_relative(-scan_step_units, 0)
                 _log(
                     f"aim loop {self.round_number}: scan left "
-                    f"pointer=({self.pointer_x},{self.pointer_y})"
+                    f"relative=(-{scan_step_units},0)"
                 )
                 if settings.settle_delay_ms:
                     time.sleep(settings.settle_delay_ms / 1000)
@@ -695,13 +700,13 @@ class YueyaXuexiongExplore(CustomAction):
             box = min(
                 boxes,
                 key=lambda candidate: (
-                    (_box_center(candidate)[0] - self.pointer_x) ** 2
-                    + (_box_center(candidate)[1] - self.pointer_y) ** 2
+                    (_box_center(candidate)[0] - center_x) ** 2
+                    + (_box_center(candidate)[1] - center_y) ** 2
                 ),
             )
             target_x, target_y = _box_center(box)
-            error_x = target_x - self.pointer_x
-            error_y = target_y - self.pointer_y
+            error_x = target_x - center_x
+            error_y = target_y - center_y
             if (
                 abs(error_x) <= settings.center_tolerance
                 and abs(error_y) <= settings.center_tolerance
@@ -717,33 +722,24 @@ class YueyaXuexiongExplore(CustomAction):
                 return True
 
             self.centered_frames = 0
-            move_x = _clamp(
-                error_x * settings.aim_gain_percent // 100,
-                settings.max_relative_move,
+            scaled_step = max(
+                1, relative_aim_step_units * settings.aim_gain_percent // 100
             )
-            move_y = _clamp(
-                error_y * settings.aim_gain_percent // 100,
-                settings.max_relative_move,
-            )
-            self.pointer_x, self.pointer_y = _screen_point(
-                width,
-                height,
-                self.pointer_x + move_x,
-                self.pointer_y + move_y,
-            )
-            controller.post_touch_move(
-                self.pointer_x, self.pointer_y, contact=0
-            ).wait()
+            move_x = _clamp(error_x, scaled_step)
+            move_y = _clamp(error_y, scaled_step)
+            _relative_mouse().move_relative(move_x, move_y)
             _log(
-                f"aim loop {self.round_number}: center target={box} "
-                f"error=({error_x},{error_y}) delta=({move_x},{move_y}) "
-                f"pointer=({self.pointer_x},{self.pointer_y})"
+                f"aim loop {self.round_number}: relative aim target={box} "
+                f"screen_error=({error_x},{error_y}) move=({move_x},{move_y})"
             )
             if settings.settle_delay_ms:
                 time.sleep(settings.settle_delay_ms / 1000)
             return True
-        except (RuntimeError, ValueError, TypeError):
-            _log("aim loop: input or recognition failed; keeping task recoverable")
+        except (RuntimeError, ValueError, TypeError, OSError) as error:
+            _log(
+                f"aim loop: relative input or recognition failed "
+                f"({type(error).__name__}: {error})"
+            )
             return False
 
 
