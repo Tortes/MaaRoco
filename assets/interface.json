@@ -51,7 +51,6 @@
     "task": [],
     "import": [
         "tasks/RandomThrow.json",
-        "tasks/PipaBirdThrow.json",
-        "tasks/YueyaXuexiongThrow.json"
+        "tasks/TargetPetThrow.json"
     ]
 }

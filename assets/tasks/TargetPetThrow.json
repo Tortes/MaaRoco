@@ -1,0 +1,88 @@
+{
+    "task": [
+        {
+            "name": "TargetPetSearchThrow",
+            "label": "$task.TargetPetSearchThrow.label",
+            "entry": "TargetPetThrowStart",
+            "default_check": false,
+            "description": "$task.TargetPetSearchThrow.description",
+            "option": [
+                "TargetPetModel"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "TargetPetModel": {
+            "type": "select",
+            "label": "$option.TargetPetModel.label",
+            "description": "$option.TargetPetModel.description",
+            "default_case": "Huolong",
+            "cases": [
+                {
+                    "name": "Huolong",
+                    "label": "$option.TargetPetModel.case.Huolong.label",
+                    "description": "$option.TargetPetModel.case.Huolong.description",
+                    "pipeline_override": {
+                        "TargetPetAimDetect": {
+                            "custom_recognition_param": {
+                                "model": "resource/model/target/huolong.pt",
+                                "confidence": 0.05,
+                                "imgsz": 640
+                            }
+                        },
+                        "TargetPetAimLoop": {
+                            "custom_action_param": {
+                                "target_recognition": "TargetPetAimDetect",
+                                "detection_score_min": 0.01
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "YueyaXuexiong",
+                    "label": "$option.TargetPetModel.case.YueyaXuexiong.label",
+                    "pipeline_override": {
+                        "TargetPetAimDetect": {
+                            "custom_recognition_param": {
+                                "model": "resource/model/detect/yueya_xuexiong.onnx",
+                                "confidence": 0.7,
+                                "imgsz": 512
+                            }
+                        },
+                        "TargetPetAimLoop": {
+                            "custom_action_param": {
+                                "target_recognition": "TargetPetAimDetect",
+                                "detection_score_min": 0.01
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "PipaBird",
+                    "label": "$option.TargetPetModel.case.PipaBird.label",
+                    "pipeline_override": {
+                        "TargetPetAimDetect": {
+                            "custom_recognition_param": {
+                                "model": "resource/model/detect/pipa_bird.onnx",
+                                "confidence": 0.1,
+                                "imgsz": 416
+                            }
+                        },
+                        "TargetPetAimLoop": {
+                            "custom_action_param": {
+                                "target_recognition": "TargetPetAimDetect",
+                                "detection_score_min": 0.01
+                            }
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

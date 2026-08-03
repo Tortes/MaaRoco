@@ -1,0 +1,66 @@
+{
+    "TargetPetThrowStart": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 69
+            }
+        },
+        "post_delay": 300,
+        "next": [
+            "TargetPetAimReset"
+        ]
+    },
+    "TargetPetAimReset": {
+        "recognition": "DirectHit",
+        "action": "Custom",
+        "custom_action": "target_pet_explore",
+        "custom_action_param": {
+            "reset": true
+        },
+        "next": [
+            "TargetPetAimLoop"
+        ]
+    },
+    "TargetPetAimDetect": {
+        "recognition": "Custom",
+        "custom_recognition": "target_pet_detect",
+        "custom_recognition_param": {
+            "model": "resource/model/target/huolong.pt",
+            "confidence": 0.05,
+            "imgsz": 640
+        },
+        "rate_limit": 100
+    },
+    "TargetPetAimLoop": {
+        "recognition": "DirectHit",
+        "action": "Custom",
+        "custom_action": "target_pet_explore",
+        "custom_action_param": {
+            "target_recognition": "TargetPetAimDetect",
+            "aim_gain_percent": 100,
+            "center_tolerance": 48,
+            "settle_delay_ms": 100,
+            "verification_frames": 1,
+            "max_target_area_percent": 55,
+            "min_hold_ms": 80,
+            "throw_cooldown_ms": 0,
+            "detection_score_min": 0.01,
+            "scan_step_units": 80,
+            "relative_aim_fast_step_units": 240,
+            "relative_aim_slow_step_units": 80,
+            "relative_aim_fine_step_units": 24,
+            "relative_aim_slow_radius_px": 320,
+            "relative_aim_fine_radius_px": 120,
+            "aim_enter_delay_ms": 120,
+            "lost_grace_frames": 2
+        },
+        "next": [
+            "TargetPetAimLoop"
+        ],
+        "on_error": [
+            "TargetPetAimLoop"
+        ]
+    }
+}
