@@ -1,0 +1,62 @@
+{
+  "model": "yueya_xuexiong_clean_v2",
+  "base_weights": {
+    "file": "yolo11n.pt",
+    "sha256": "0EBBC80D4A7680D14987A577CD21342B65ECFD94632BD9A8DA63AE6417644EE1"
+  },
+  "training": {
+    "imgsz": 768,
+    "batch": 8,
+    "requested_epochs": 120,
+    "completed_epochs": 81,
+    "best_epoch": 56,
+    "early_stopping_patience": 25,
+    "old_snow_bear_weights_reused": false
+  },
+  "dataset": {
+    "train_images": 72,
+    "train_real_images": 24,
+    "train_synthetic_images": 48,
+    "validation_images": 10,
+    "validation_real_images": 8,
+    "validation_synthetic_images": 2,
+    "validation_real_percent": 80.0,
+    "clean_real_instances": 103,
+    "old_clustered_annotations_included": false
+  },
+  "mixed_validation": {
+    "instances": 27,
+    "precision": 0.955,
+    "recall": 0.889,
+    "map50": 0.907,
+    "map50_95": 0.721
+  },
+  "real_only_validation": {
+    "images": 8,
+    "instances": 25,
+    "precision": 0.9514011947,
+    "recall": 0.88,
+    "map50": 0.8945566519,
+    "map50_95": 0.701691606
+  },
+  "current_directory_regression_at_0_5": {
+    "positive_images": 28,
+    "negative_images": 4,
+    "true_positives": 99,
+    "false_positives": 2,
+    "false_negatives": 4,
+    "precision": 0.9802,
+    "recall": 0.9612,
+    "negative_image_detections": 0
+  },
+  "artifacts": {
+    "pt_sha256": "63FF57407653DA4731B3A4765CA1A2CBC59DC0625B90DE52CB1E48497B43C7D1",
+    "onnx_sha256": "F9023BAD0CBE2290671B69B8DD7FE51473C21745AD332D459828EF09C181AB42",
+    "onnx_static_batch": 1,
+    "pt_onnx_real_validation_detection_counts_match": true
+  },
+  "deployment": {
+    "confidence": 0.5,
+    "imgsz": 768
+  }
+}

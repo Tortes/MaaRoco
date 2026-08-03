@@ -379,6 +379,26 @@ def prepare_clean_v2_dataset(args: argparse.Namespace) -> None:
             split_manifest["synthetic"].append(image.name)
 
     _write_dataset_yaml(output)
+    real_val_images = sorted(
+        path
+        for path in _images(output / "images" / "val")
+        if path.name.startswith(("real_", "negative_"))
+    )
+    (output / "real_val.txt").write_text(
+        "\n".join(path.as_posix() for path in real_val_images) + "\n",
+        encoding="ascii",
+    )
+    real_val_yaml = "\n".join(
+        [
+            f"path: {output.as_posix()}",
+            "train: images/train",
+            "val: real_val.txt",
+            "names:",
+            f"  0: {CLASS_NAME}",
+            "",
+        ]
+    )
+    (output / "data_real_val.yaml").write_text(real_val_yaml, encoding="ascii")
     train_manifest = manifest["train"]
     val_manifest = manifest["val"]
     assert isinstance(train_manifest, dict) and isinstance(val_manifest, dict)

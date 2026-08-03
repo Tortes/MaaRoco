@@ -51,8 +51,8 @@
                         "TargetPetAimDetect": {
                             "custom_recognition_param": {
                                 "model": "resource/model/detect/yueya_xuexiong.onnx",
-                                "confidence": 0.7,
-                                "imgsz": 512
+                                "confidence": 0.5,
+                                "imgsz": 768
                             }
                         },
                         "TargetPetAimLoop": {
