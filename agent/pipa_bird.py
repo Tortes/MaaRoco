@@ -532,7 +532,7 @@ class YueyaXuexiongExplore(CustomAction):
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
         aim_gain_percent=100,
-        center_tolerance=6,
+        center_tolerance=48,
         max_relative_move=360,
         settle_delay_ms=100,
         verification_frames=1,
@@ -541,7 +541,7 @@ class YueyaXuexiongExplore(CustomAction):
         throw_cooldown_ms=0,
         trajectory_base_lift_px=0,
         trajectory_distance_lift_px=0,
-        detection_score_min=0.70,
+        detection_score_min=0.65,
         target_lock_max_shift=140,
     )
 
@@ -570,8 +570,20 @@ class YueyaXuexiongExplore(CustomAction):
         scan_step_units = _bounded_int(
             param.get("scan_step_units"), 80, 10, 300
         )
-        relative_aim_step_units = _bounded_int(
-            param.get("relative_aim_step_units"), 800, 10, 2000
+        relative_aim_fast_step_units = _bounded_int(
+            param.get("relative_aim_fast_step_units"), 240, 20, 1000
+        )
+        relative_aim_slow_step_units = _bounded_int(
+            param.get("relative_aim_slow_step_units"), 80, 10, 500
+        )
+        relative_aim_fine_step_units = _bounded_int(
+            param.get("relative_aim_fine_step_units"), 24, 2, 200
+        )
+        relative_aim_slow_radius_px = _bounded_int(
+            param.get("relative_aim_slow_radius_px"), 320, 100, 1000
+        )
+        relative_aim_fine_radius_px = _bounded_int(
+            param.get("relative_aim_fine_radius_px"), 120, 50, 500
         )
         aim_enter_delay_ms = _bounded_int(
             param.get("aim_enter_delay_ms"), 120, 0, 1000
@@ -681,15 +693,24 @@ class YueyaXuexiongExplore(CustomAction):
                 return True
 
             self.centered_frames = 0
-            scaled_step = max(
-                1, relative_aim_step_units * settings.aim_gain_percent // 100
-            )
+            max_error = max(abs(error_x), abs(error_y))
+            if max_error > relative_aim_slow_radius_px:
+                aim_mode = "fast"
+                base_step = relative_aim_fast_step_units
+            elif max_error > relative_aim_fine_radius_px:
+                aim_mode = "slow"
+                base_step = relative_aim_slow_step_units
+            else:
+                aim_mode = "fine"
+                base_step = relative_aim_fine_step_units
+            scaled_step = max(1, base_step * settings.aim_gain_percent // 100)
             move_x = _clamp(error_x, scaled_step)
             move_y = _clamp(error_y, scaled_step)
             _relative_mouse().move_relative(move_x, move_y)
             _log(
                 f"aim loop {self.round_number}: relative aim target={box} "
-                f"screen_error=({error_x},{error_y}) move=({move_x},{move_y})"
+                f"screen_error=({error_x},{error_y}) mode={aim_mode} "
+                f"step={scaled_step} move=({move_x},{move_y})"
             )
             if settings.settle_delay_ms:
                 time.sleep(settings.settle_delay_ms / 1000)
