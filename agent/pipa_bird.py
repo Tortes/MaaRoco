@@ -520,7 +520,7 @@ class YueyaXuexiongAimAndThrow(PipaBirdAimAndThrow):
 
 @AgentServer.custom_action("yueya_xuexiong_explore")
 class YueyaXuexiongExplore(CustomAction):
-    """Keep aiming held and throw only when the ready icon is visible."""
+    """Keep aiming held and throw when the target box reaches screen center."""
 
     pointer_held = False
     hold_started_at = 0.0
@@ -528,7 +528,6 @@ class YueyaXuexiongExplore(CustomAction):
     round_number = 0
     target_seen = False
     lost_frames = 0
-    ready_frames = 0
 
     default_settings = AimSettings(
         target_recognition="YueyaXuexiongExploreAimDetect",
@@ -536,7 +535,7 @@ class YueyaXuexiongExplore(CustomAction):
         center_tolerance=6,
         max_relative_move=360,
         settle_delay_ms=100,
-        verification_frames=2,
+        verification_frames=1,
         max_target_area_percent=55,
         min_hold_ms=80,
         throw_cooldown_ms=0,
@@ -553,7 +552,6 @@ class YueyaXuexiongExplore(CustomAction):
         self.round_number = 0
         self.target_seen = False
         self.lost_frames = 0
-        self.ready_frames = 0
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -573,24 +571,13 @@ class YueyaXuexiongExplore(CustomAction):
             param.get("scan_step_units"), 80, 10, 300
         )
         relative_aim_step_units = _bounded_int(
-            param.get("relative_aim_step_units"), 40, 5, 200
+            param.get("relative_aim_step_units"), 800, 10, 2000
         )
         aim_enter_delay_ms = _bounded_int(
             param.get("aim_enter_delay_ms"), 120, 0, 1000
         )
         lost_grace_frames = _bounded_int(
             param.get("lost_grace_frames"), 2, 0, 10
-        )
-        ready_recognition = param.get(
-            "ready_recognition", "YueyaXuexiongAimReady"
-        )
-        if not isinstance(ready_recognition, str) or not ready_recognition:
-            ready_recognition = "YueyaXuexiongAimReady"
-        ready_match_tolerance_px = _bounded_int(
-            param.get("ready_match_tolerance_px"), 48, 8, 200
-        )
-        ready_confirmation_frames = _bounded_int(
-            param.get("ready_confirmation_frames"), 1, 1, 3
         )
         try:
             image = controller.post_screencap().get(wait=True)
@@ -614,55 +601,6 @@ class YueyaXuexiongExplore(CustomAction):
                 if aim_enter_delay_ms:
                     time.sleep(aim_enter_delay_ms / 1000)
                 image = controller.post_screencap().get(wait=True)
-
-            ready_detail = context.run_recognition(ready_recognition, image)
-            ready_boxes = _result_boxes(ready_detail, 0.0)
-            ready_box = min(
-                ready_boxes,
-                key=lambda candidate: (
-                    (_box_center(candidate)[0] - center_x) ** 2
-                    + (_box_center(candidate)[1] - center_y) ** 2
-                ),
-                default=None,
-            )
-            if ready_box is not None:
-                ready_x, ready_y = _box_center(ready_box)
-                ready_error_x = ready_x - center_x
-                ready_error_y = ready_y - center_y
-                if (
-                    abs(ready_error_x) <= ready_match_tolerance_px
-                    and abs(ready_error_y) <= ready_match_tolerance_px
-                ):
-                    self.ready_frames += 1
-                    _log(
-                        f"aim loop {self.round_number}: ready icon matched "
-                        f"frame={self.ready_frames}/{ready_confirmation_frames} "
-                        f"box={ready_box} error=({ready_error_x},{ready_error_y})"
-                    )
-                    if self.ready_frames < ready_confirmation_frames:
-                        if settings.settle_delay_ms:
-                            time.sleep(settings.settle_delay_ms / 1000)
-                        return True
-
-                    remaining_hold_ms = settings.min_hold_ms - int(
-                        (time.monotonic() - self.hold_started_at) * 1000
-                    )
-                    if remaining_hold_ms > 0:
-                        time.sleep(remaining_hold_ms / 1000)
-                    _log(
-                        f"release: target confirmed by ready icon "
-                        f"round={self.round_number} box={ready_box}"
-                    )
-                    _relative_mouse().mouse_up("left", delay=0)
-                    self.pointer_held = False
-                    self.centered_frames = 0
-                    self.target_seen = False
-                    self.lost_frames = 0
-                    self.ready_frames = 0
-                    if settings.throw_cooldown_ms:
-                        time.sleep(settings.throw_cooldown_ms / 1000)
-                    return True
-            self.ready_frames = 0
 
             detail = context.run_recognition(settings.target_recognition, image)
             boxes = [
@@ -713,10 +651,31 @@ class YueyaXuexiongExplore(CustomAction):
             ):
                 self.centered_frames += 1
                 _log(
-                    f"aim loop {self.round_number}: model centered but ready icon "
-                    f"absent; hold frame={self.centered_frames} target={box} "
-                    f"error=({error_x},{error_y})"
+                    f"aim loop {self.round_number}: target box centered "
+                    f"frame={self.centered_frames}/{settings.verification_frames} "
+                    f"target={box} error=({error_x},{error_y})"
                 )
+                if self.centered_frames < settings.verification_frames:
+                    if settings.settle_delay_ms:
+                        time.sleep(settings.settle_delay_ms / 1000)
+                    return True
+
+                remaining_hold_ms = settings.min_hold_ms - int(
+                    (time.monotonic() - self.hold_started_at) * 1000
+                )
+                if remaining_hold_ms > 0:
+                    time.sleep(remaining_hold_ms / 1000)
+                _log(
+                    f"release: target box center confirmed "
+                    f"round={self.round_number} target={box}"
+                )
+                _relative_mouse().mouse_up("left", delay=0)
+                self.pointer_held = False
+                self.centered_frames = 0
+                self.target_seen = False
+                self.lost_frames = 0
+                if settings.throw_cooldown_ms:
+                    time.sleep(settings.throw_cooldown_ms / 1000)
                 if settings.settle_delay_ms:
                     time.sleep(settings.settle_delay_ms / 1000)
                 return True
