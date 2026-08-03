@@ -29,6 +29,7 @@ RUNS = TRAINING_ROOT / "runs"
 MODELS = TRAINING_ROOT / "models"
 CLASS_NAME = "yueya_xuexiong"
 IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".webp"}
+CLEAN_V2_ANNOTATIONS = TRAINING_ROOT / "clean_v2_annotations.json"
 
 
 def _images(directory: Path) -> list[Path]:
@@ -289,8 +290,126 @@ def _add_pair(source: Path, label: Path | None, output: Path, split: str, prefix
     )
 
 
+def _add_box_pair(
+    source: Path,
+    boxes: list[list[int]],
+    output: Path,
+    split: str,
+    prefix: str,
+) -> None:
+    stem = f"{prefix}_{source.stem}"
+    image_output = output / "images" / split / f"{stem}.jpg"
+    label_output = output / "labels" / split / f"{stem}.txt"
+    image = _read_image(source)
+    height, width = image.shape[:2]
+    _write_image(image_output, image)
+    label_output.parent.mkdir(parents=True, exist_ok=True)
+    label_output.write_text(_yolo_lines(boxes, width, height), encoding="ascii")
+
+
+def _write_dataset_yaml(output: Path) -> None:
+    yaml = "\n".join(
+        [
+            f"path: {output.as_posix()}",
+            "train: images/train",
+            "val: images/val",
+            "names:",
+            f"  0: {CLASS_NAME}",
+            "",
+        ]
+    )
+    (output / "data.yaml").write_text(yaml, encoding="ascii")
+
+
+def prepare_clean_v2_dataset(args: argparse.Namespace) -> None:
+    """Build a real-first split without any of the old clustered annotations."""
+    annotations = json.loads(CLEAN_V2_ANNOTATIONS.read_text(encoding="utf-8"))
+    database_dir = REPO_ROOT.parent / "database" / "yueyaxuexiong"
+    output = DATASETS / "clean_v2"
+    shutil.rmtree(output, ignore_errors=True)
+
+    manifest: dict[str, object] = {
+        "policy": "fixed scene-aware split; old clustered annotations excluded",
+        "train": {"positive_real": [], "negative_real": [], "synthetic": []},
+        "val": {"positive_real": [], "negative_real": [], "synthetic": []},
+    }
+
+    for split in ("train", "val"):
+        positive_key = f"positive_{split}"
+        negative_key = f"negative_{split}"
+        split_manifest = manifest[split]
+        assert isinstance(split_manifest, dict)
+        for filename, boxes in annotations[positive_key].items():
+            source = database_dir / filename
+            if not source.exists():
+                raise FileNotFoundError(source)
+            _add_box_pair(source, boxes, output, split, "real")
+            split_manifest["positive_real"].append(filename)
+        for filename in annotations[negative_key]:
+            source = database_dir / filename
+            if not source.exists():
+                raise FileNotFoundError(source)
+            _add_pair(source, None, output, split, "negative")
+            split_manifest["negative_real"].append(filename)
+
+    synthetic_images = _images(WORK / "synthetic" / "images")
+    required_synthetic = args.synthetic_train_count + args.synthetic_val_count
+    if len(synthetic_images) < required_synthetic:
+        raise FileNotFoundError(
+            f"Need {required_synthetic} synthetic images; run synthesize first"
+        )
+    synthetic_images.sort(
+        key=lambda path: hashlib.sha256(path.name.encode("ascii")).hexdigest()
+    )
+    synthetic_val = synthetic_images[: args.synthetic_val_count]
+    synthetic_train = synthetic_images[
+        args.synthetic_val_count : required_synthetic
+    ]
+    for split, images in (("train", synthetic_train), ("val", synthetic_val)):
+        split_manifest = manifest[split]
+        assert isinstance(split_manifest, dict)
+        for image in images:
+            _add_pair(
+                image,
+                WORK / "synthetic" / "labels" / f"{image.stem}.txt",
+                output,
+                split,
+                "synthetic",
+            )
+            split_manifest["synthetic"].append(image.name)
+
+    _write_dataset_yaml(output)
+    train_manifest = manifest["train"]
+    val_manifest = manifest["val"]
+    assert isinstance(train_manifest, dict) and isinstance(val_manifest, dict)
+    train_real = len(train_manifest["positive_real"]) + len(
+        train_manifest["negative_real"]
+    )
+    val_real = len(val_manifest["positive_real"]) + len(
+        val_manifest["negative_real"]
+    )
+    val_total = val_real + len(val_manifest["synthetic"])
+    manifest["summary"] = {
+        "train_real": train_real,
+        "train_synthetic": len(train_manifest["synthetic"]),
+        "val_real": val_real,
+        "val_synthetic": len(val_manifest["synthetic"]),
+        "val_real_percent": round(100 * val_real / val_total, 1),
+    }
+    (output / "split_manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"Dataset: {output}")
+    print(f"Train: {len(_images(output / 'images' / 'train'))}")
+    print(f"Validation: {len(_images(output / 'images' / 'val'))}")
+    print(f"Validation real-game ratio: {100 * val_real / val_total:.1f}%")
+
+
 def prepare_dataset(args: argparse.Namespace) -> None:
     stage = args.stage
+    if stage == "clean_v2":
+        prepare_clean_v2_dataset(args)
+        return
     output = DATASETS / stage
     shutil.rmtree(output, ignore_errors=True)
     synthetic_images = _images(WORK / "synthetic" / "images")
@@ -319,17 +438,7 @@ def prepare_dataset(args: argparse.Namespace) -> None:
             split = _split_for(image, args.validation_percent)
             for repeat in range(args.hard_negative_repeat):
                 _add_pair(image, None, output, split, f"neg{repeat:02d}")
-    yaml = "\n".join(
-        [
-            f"path: {output.as_posix()}",
-            "train: images/train",
-            "val: images/val",
-            "names:",
-            f"  0: {CLASS_NAME}",
-            "",
-        ]
-    )
-    (output / "data.yaml").write_text(yaml, encoding="ascii")
+    _write_dataset_yaml(output)
     print(f"Dataset: {output}")
     print(f"Train: {len(_images(output / 'images' / 'train'))}")
     print(f"Validation: {len(_images(output / 'images' / 'val'))}")
@@ -374,8 +483,15 @@ def train(args: argparse.Namespace) -> None:
         hsv_v=0.35,
         translate=0.08,
         scale=0.45,
-        mosaic=0.7 if args.stage == "synthetic" else 0.35,
+        mosaic=(
+            0.7
+            if args.stage == "synthetic"
+            else 0.2 if args.stage == "clean_v2" else 0.35
+        ),
         close_mosaic=10,
+        patience=args.patience,
+        seed=20260803,
+        deterministic=True,
         plots=True,
     )
     best = RUNS / run_name / "weights" / "best.pt"
@@ -388,7 +504,10 @@ def train(args: argparse.Namespace) -> None:
 def export_onnx(args: argparse.Namespace) -> None:
     from ultralytics import YOLO
 
-    weights = Path(args.weights) if args.weights else MODELS / "yueya_xuexiong_mixed.pt"
+    default_weights = MODELS / "yueya_xuexiong_clean_v2.pt"
+    if not default_weights.exists():
+        default_weights = MODELS / "yueya_xuexiong_mixed.pt"
+    weights = Path(args.weights) if args.weights else default_weights
     if not weights.exists():
         raise FileNotFoundError(weights)
     output = Path(YOLO(str(weights)).export(format="onnx", imgsz=args.imgsz, simplify=True, opset=16))
@@ -549,7 +668,9 @@ def parser() -> argparse.ArgumentParser:
     synthetic.set_defaults(func=synthesize)
 
     dataset = commands.add_parser("prepare")
-    dataset.add_argument("--stage", choices=("synthetic", "mixed"), required=True)
+    dataset.add_argument(
+        "--stage", choices=("synthetic", "mixed", "clean_v2"), required=True
+    )
     dataset.add_argument("--validation-percent", type=int, default=20)
     dataset.add_argument(
         "--hard-negative-repeat", type=int, default=1,
@@ -559,15 +680,20 @@ def parser() -> argparse.ArgumentParser:
         "--real-repeat", type=int, default=3,
         help="Repeat reviewed real frames in mixed training so they outweigh synthetic composites.",
     )
+    dataset.add_argument("--synthetic-train-count", type=int, default=48)
+    dataset.add_argument("--synthetic-val-count", type=int, default=2)
     dataset.set_defaults(func=prepare_dataset)
 
     training = commands.add_parser("train")
-    training.add_argument("--stage", choices=("synthetic", "mixed"), required=True)
+    training.add_argument(
+        "--stage", choices=("synthetic", "mixed", "clean_v2"), required=True
+    )
     training.add_argument("--weights")
     training.add_argument("--epochs", type=int, default=40)
     training.add_argument("--imgsz", type=int, default=640)
     training.add_argument("--batch", type=int)
     training.add_argument("--run-name")
+    training.add_argument("--patience", type=int, default=25)
     training.set_defaults(func=train)
 
     exporter = commands.add_parser("export")
