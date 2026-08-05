@@ -1,0 +1,21 @@
+{
+    "repository": "https://github.com/Tortes/MaaFramework",
+    "branch": "feat/interception-relative-move-v5.11",
+    "commit": "d6381bd76171647463d62358f6fed01f2a613d79",
+    "configuration": "RelWithDebInfo",
+    "workflow_run": 31035772030,
+    "artifact": {
+        "id": 8943030200,
+        "name": "MAA-win-x86_64",
+        "reported_size_bytes": 72858796,
+        "github_digest": "sha256:da9cc89888d64c791ee9dc973ae98b96c2a33c197789e6d296606dd966c966a7",
+        "api_zip_sha256": "da9cc89888d64c791ee9dc973ae98b96c2a33c197789e6d296606dd966c966a7"
+    },
+    "files": {
+        "MaaWin32ControlUnit.dll": "eb65f606ab6e89d9b245be6cecc34cf98d1cff2703ea52f0d732fb8c9ee27e13",
+        "MaaFramework.dll": "f99dd8083616b15093070ce2e2f63b39bfde5f18768eddb9c44ea0b57d66c546",
+        "MaaAgentClient.dll": "f2e7acbe1a517bd72696d3a205357c70ee7d4c4ec381aef4a6aee3271af98db3",
+        "MaaAgentServer.dll": "f1ba042dcefdf9bc5212a9661faaa05a5c81d3d14d30cbdf9c473b91d874211f",
+        "MaaUtils.dll": "f5b8ef1feb4512f0cab1cd24c700d38b7543917e4cdba0440c92913183b55b75"
+    }
+}
