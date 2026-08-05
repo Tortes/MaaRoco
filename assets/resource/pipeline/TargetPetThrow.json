@@ -55,7 +55,8 @@
             "relative_aim_slow_radius_px": 320,
             "relative_aim_fine_radius_px": 120,
             "aim_enter_delay_ms": 120,
-            "lost_grace_frames": 2
+            "lost_grace_frames": 2,
+            "target_lock_max_shift": 1000
         },
         "next": [
             "TargetPetAimLoop"
