@@ -49,8 +49,6 @@
     "task.TargetPetSearchThrow.description": "持续按住左键搜索所选精灵，检测到目标后分段调整瞄准，目标框中心进入准心容差后松开投球。",
     "option.TargetPetModel.label": "目标精灵模型",
     "option.TargetPetModel.description": "选择本次搜索与投掷使用的检测模型。",
-    "option.TargetPetModel.case.Huolong.label": "火龙（RocoPilot）",
-    "option.TargetPetModel.case.Huolong.description": "来自 RocoPilot 的 huolong.pt。该模型内部类别名为 xueren，且当前远距离实测置信度较低。",
     "option.TargetPetModel.case.YueyaXuexiong.label": "月牙雪熊（实验）",
     "option.TargetPetModel.case.PipaBird.label": "噼啪鸟（实验）",
     "task.RandomThrow.label": "随机丢球模式",

@@ -12,7 +12,6 @@ from maa.custom_recognition import CustomRecognition
 
 
 _interception = None
-_target_models: dict[str, object] = {}
 
 
 def _relative_mouse():
@@ -216,82 +215,6 @@ def _log(message: str, scope: str = "PipaBird") -> None:
             log_file.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {line}\n")
     except OSError:
         pass
-
-
-@AgentServer.custom_recognition("target_pet_detect")
-class TargetPetRecognition(CustomRecognition):
-    """Run the model selected by the target-pet task and return its best box."""
-
-    def analyze(
-        self, context: Context, argv: CustomRecognition.AnalyzeArg
-    ) -> CustomRecognition.AnalyzeResult | None:
-        param = _json_object(argv.custom_recognition_param)
-        model_value = param.get("model", "resource/model/target/huolong.pt")
-        if not isinstance(model_value, str) or not model_value:
-            return None
-
-        model_path = Path(model_value)
-        if not model_path.is_absolute():
-            model_path = Path.cwd() / model_path
-        model_path = model_path.resolve()
-        if not model_path.is_file():
-            _log(f"detector model missing: {model_path}", "TargetPet")
-            return None
-
-        confidence = _bounded_float(param.get("confidence"), 0.1, 0.01, 0.99)
-        image_size = _bounded_int(param.get("imgsz"), 640, 256, 1600)
-        cache_key = str(model_path)
-        try:
-            model = _target_models.get(cache_key)
-            if model is None:
-                from ultralytics import YOLO
-
-                model = YOLO(cache_key, task="detect")
-                _target_models[cache_key] = model
-                _log(f"detector loaded: {model_path.name}", "TargetPet")
-
-            results = model(
-                argv.image,
-                verbose=False,
-                conf=confidence,
-                imgsz=image_size,
-            )
-        except (ImportError, RuntimeError, TypeError, ValueError, OSError) as error:
-            _log(
-                f"detector failed ({type(error).__name__}: {error})",
-                "TargetPet",
-            )
-            return None
-
-        candidates: list[tuple[float, tuple[int, int, int, int], int]] = []
-        for result in results:
-            if result.boxes is None:
-                continue
-            for detected in result.boxes:
-                x1, y1, x2, y2 = (
-                    round(float(value)) for value in detected.xyxy[0].tolist()
-                )
-                width = x2 - x1
-                height = y2 - y1
-                if width <= 0 or height <= 0:
-                    continue
-                score = float(detected.conf[0])
-                class_id = int(detected.cls[0])
-                candidates.append((score, (x1, y1, width, height), class_id))
-
-        if not candidates:
-            return None
-
-        score, box, class_id = max(candidates, key=lambda candidate: candidate[0])
-        return CustomRecognition.AnalyzeResult(
-            box=box,
-            detail={
-                "model": model_path.name,
-                "score": round(score, 6),
-                "class_id": class_id,
-                "candidate_count": len(candidates),
-            },
-        )
 
 
 @AgentServer.custom_recognition("yueya_xuexiong_blue")

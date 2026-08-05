@@ -24,13 +24,14 @@
         ]
     },
     "TargetPetAimDetect": {
-        "recognition": "Custom",
-        "custom_recognition": "target_pet_detect",
-        "custom_recognition_param": {
-            "model": "resource/model/target/huolong.pt",
-            "confidence": 0.05,
-            "imgsz": 640
-        },
+        "recognition": "NeuralNetworkDetect",
+        "model": "yueya_xuexiong.onnx",
+        "labels": [
+            "TargetPet"
+        ],
+        "expected": 0,
+        "threshold": 0.5,
+        "order_by": "Score",
         "rate_limit": 100
     },
     "TargetPetAimLoop": {
@@ -46,7 +47,7 @@
             "max_target_area_percent": 55,
             "min_hold_ms": 80,
             "throw_cooldown_ms": 0,
-            "detection_score_min": 0.01,
+            "detection_score_min": 0.5,
             "scan_step_units": 80,
             "relative_aim_fast_step_units": 240,
             "relative_aim_slow_step_units": 80,

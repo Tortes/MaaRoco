@@ -22,43 +22,20 @@
             "type": "select",
             "label": "$option.TargetPetModel.label",
             "description": "$option.TargetPetModel.description",
-            "default_case": "Huolong",
+            "default_case": "YueyaXuexiong",
             "cases": [
-                {
-                    "name": "Huolong",
-                    "label": "$option.TargetPetModel.case.Huolong.label",
-                    "description": "$option.TargetPetModel.case.Huolong.description",
-                    "pipeline_override": {
-                        "TargetPetAimDetect": {
-                            "custom_recognition_param": {
-                                "model": "resource/model/target/huolong.pt",
-                                "confidence": 0.05,
-                                "imgsz": 640
-                            }
-                        },
-                        "TargetPetAimLoop": {
-                            "custom_action_param": {
-                                "target_recognition": "TargetPetAimDetect",
-                                "detection_score_min": 0.01
-                            }
-                        }
-                    }
-                },
                 {
                     "name": "YueyaXuexiong",
                     "label": "$option.TargetPetModel.case.YueyaXuexiong.label",
                     "pipeline_override": {
                         "TargetPetAimDetect": {
-                            "custom_recognition_param": {
-                                "model": "resource/model/detect/yueya_xuexiong.onnx",
-                                "confidence": 0.5,
-                                "imgsz": 768
-                            }
+                            "model": "yueya_xuexiong.onnx",
+                            "threshold": 0.5
                         },
                         "TargetPetAimLoop": {
                             "custom_action_param": {
                                 "target_recognition": "TargetPetAimDetect",
-                                "detection_score_min": 0.01
+                                "detection_score_min": 0.5
                             }
                         }
                     }
@@ -68,16 +45,13 @@
                     "label": "$option.TargetPetModel.case.PipaBird.label",
                     "pipeline_override": {
                         "TargetPetAimDetect": {
-                            "custom_recognition_param": {
-                                "model": "resource/model/detect/pipa_bird.onnx",
-                                "confidence": 0.1,
-                                "imgsz": 416
-                            }
+                            "model": "pipa_bird.onnx",
+                            "threshold": 0.1
                         },
                         "TargetPetAimLoop": {
                             "custom_action_param": {
                                 "target_recognition": "TargetPetAimDetect",
-                                "detection_score_min": 0.01
+                                "detection_score_min": 0.1
                             }
                         }
                     }

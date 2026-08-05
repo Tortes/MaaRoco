@@ -49,8 +49,6 @@
     "task.TargetPetSearchThrow.description": "Holds aim while searching for the selected pet, adjusts the camera in stages, and releases when the target box center enters the crosshair tolerance.",
     "option.TargetPetModel.label": "Target pet model",
     "option.TargetPetModel.description": "Select the detector used for this search-and-throw run.",
-    "option.TargetPetModel.case.Huolong.label": "Huolong (RocoPilot)",
-    "option.TargetPetModel.case.Huolong.description": "RocoPilot's huolong.pt. Its embedded class name is xueren and its current long-range confidence is low.",
     "option.TargetPetModel.case.YueyaXuexiong.label": "Yueya Snow Bear (experimental)",
     "option.TargetPetModel.case.PipaBird.label": "Pipa Bird (experimental)",
     "task.RandomThrow.label": "Random Throw Mode",
