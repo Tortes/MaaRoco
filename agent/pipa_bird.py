@@ -876,7 +876,8 @@ class TargetPetExplore(CustomAction):
             _log(
                 f"aim loop {self.round_number}: relative aim target={box} "
                 f"screen_error=({error_x},{error_y}) mode={aim_mode} "
-                f"step={scaled_step} move=({move_x},{move_y})",
+                f"step={base_step} vertical_gain={relative_aim_vertical_gain_percent}% "
+                f"move=({move_x},{move_y})",
                 "TargetPet",
             )
             if settings.settle_delay_ms:
