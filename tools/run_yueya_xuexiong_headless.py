@@ -73,28 +73,36 @@ def start_agent(client, resource, controller, tasker) -> subprocess.Popen[str]:
         [sys.executable, str(INSTALL / "agent" / "main.py"), client.identifier],
         cwd=INSTALL,
         env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     for attempt in range(3):
         if client.connect():
             return process
         if process.poll() is not None:
-            output = process.stdout.read() if process.stdout else ""
-            raise RuntimeError(f"Agent process exited early: {output}")
+            raise RuntimeError(f"Agent process exited early with code {process.returncode}.")
         time.sleep(attempt + 1)
     process.kill()
     raise RuntimeError("AgentClient.connect failed after three attempts.")
+
+
+def stop_tasker(tasker, timeout: float = 3.0) -> bool:
+    """Request a stop without letting a broken backend block test cleanup."""
+
+    if not tasker.running:
+        return True
+    job = tasker.post_stop()
+    deadline = time.monotonic() + timeout
+    while not job.done and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return job.done
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hwnd", type=int, help="Game window handle.")
     parser.add_argument("--class-name", default="UnrealWindow")
-    parser.add_argument("--entry", default="YueyaXuexiongExploreStart")
+    parser.add_argument("--entry", default="TargetPetThrowStart")
     parser.add_argument(
         "--timeout",
         type=float,
@@ -170,7 +178,7 @@ def main() -> int:
             job = tasker.post_task(args.entry)
             attempt_report = {"attempt": attempt, "started_at": time.time(), "events": []}
             report["attempts"].append(attempt_report)
-            while time.monotonic() < deadline:
+            while deadline is None or time.monotonic() < deadline:
                 log_offset, fragment = read_after(AGENT_LOG, log_offset)
                 for line in fragment.splitlines():
                     if "[PipaBird]" in line or "[TargetPet]" in line:
@@ -181,7 +189,7 @@ def main() -> int:
                     ):
                         report["confirmed_throw"] = True
                         if args.stop_after_throw:
-                            tasker.post_stop().wait()
+                            report["stop_completed"] = stop_tasker(tasker)
                             print(json.dumps(report, ensure_ascii=False))
                             return 0
                 if job.done:
@@ -189,7 +197,7 @@ def main() -> int:
                     break
                 time.sleep(0.1)
             if tasker.running:
-                tasker.post_stop().wait()
+                attempt_report["stop_completed"] = stop_tasker(tasker)
             if deadline is not None and time.monotonic() >= deadline:
                 break
 
@@ -201,7 +209,7 @@ def main() -> int:
         return 0
     finally:
         if tasker.running:
-            tasker.post_stop().wait()
+            stop_tasker(tasker)
         client.disconnect()
         if process.poll() is None:
             process.terminate()
