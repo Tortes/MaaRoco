@@ -1,8 +1,8 @@
 """Run Yueya Xuexiong exploration directly through MaaFramework, without MFA UI.
 
 The runner owns a Win32 controller, an AgentClient, and the project agent process.
-It stops as soon as the custom action logs a confirmed left-button release, making
-one real throw a concrete integration-test signal instead of relying on UI state.
+It can stop after a requested number of confirmed left-button releases, making
+real throws concrete integration-test signals instead of relying on UI state.
 """
 
 from __future__ import annotations
@@ -120,8 +120,16 @@ def main() -> int:
         action="store_true",
         help="Exit after the first confirmed release (for integration testing).",
     )
+    parser.add_argument(
+        "--stop-after-throws",
+        type=int,
+        default=0,
+        metavar="COUNT",
+        help="Exit after this many confirmed releases; 0 disables the limit.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Validate the backend connection without posting a task.")
     args = parser.parse_args()
+    required_throws = 1 if args.stop_after_throw else max(0, args.stop_after_throws)
 
     os.add_dll_directory(str(BINARY))
     os.environ["MAAFW_BINARY_PATH"] = str(BINARY)
@@ -164,6 +172,7 @@ def main() -> int:
         "hwnd": hwnd,
         "dry_run": args.dry_run,
         "confirmed_throw": False,
+        "confirmed_throws": 0,
         "attempts": [],
     }
     try:
@@ -188,7 +197,8 @@ def main() -> int:
                         or "release: target box center confirmed" in line
                     ):
                         report["confirmed_throw"] = True
-                        if args.stop_after_throw:
+                        report["confirmed_throws"] += 1
+                        if required_throws and report["confirmed_throws"] >= required_throws:
                             report["stop_completed"] = stop_tasker(tasker)
                             print(json.dumps(report, ensure_ascii=False))
                             return 0
