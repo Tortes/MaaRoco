@@ -112,6 +112,22 @@ def _box_center_tolerance(
     return tolerance_x, tolerance_y
 
 
+def _relative_aim_move(
+    error_x: int,
+    error_y: int,
+    base_step: int,
+    aim_gain_percent: int,
+    vertical_gain_percent: int,
+) -> tuple[int, int]:
+    """Convert screen error to relative mouse units with calibrated pitch gain."""
+
+    horizontal_step = max(1, base_step * aim_gain_percent // 100)
+    vertical_step = max(1, horizontal_step * vertical_gain_percent // 100)
+    move_x = _clamp(error_x, horizontal_step)
+    move_y = _clamp(error_y * vertical_gain_percent // 100, vertical_step)
+    return move_x, move_y
+
+
 def _clamp(value: int, limit: int) -> int:
     return max(-limit, min(limit, value))
 
@@ -647,6 +663,9 @@ class TargetPetExplore(CustomAction):
         relative_aim_fine_step_units = _bounded_int(
             param.get("relative_aim_fine_step_units"), 24, 2, 200
         )
+        relative_aim_vertical_gain_percent = _bounded_int(
+            param.get("relative_aim_vertical_gain_percent"), 320, 100, 600
+        )
         relative_aim_slow_radius_px = _bounded_int(
             param.get("relative_aim_slow_radius_px"), 320, 100, 1000
         )
@@ -840,9 +859,13 @@ class TargetPetExplore(CustomAction):
             else:
                 aim_mode = "fine"
                 base_step = relative_aim_fine_step_units
-            scaled_step = max(1, base_step * settings.aim_gain_percent // 100)
-            move_x = _clamp(error_x, scaled_step)
-            move_y = _clamp(error_y, scaled_step)
+            move_x, move_y = _relative_aim_move(
+                error_x,
+                error_y,
+                base_step,
+                settings.aim_gain_percent,
+                relative_aim_vertical_gain_percent,
+            )
             _wait_controller_action(
                 controller.post_relative_move(move_x, move_y),
                 "aim movement",

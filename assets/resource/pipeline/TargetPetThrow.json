@@ -52,6 +52,7 @@
             "relative_aim_fast_step_units": 240,
             "relative_aim_slow_step_units": 80,
             "relative_aim_fine_step_units": 24,
+            "relative_aim_vertical_gain_percent": 320,
             "relative_aim_slow_radius_px": 320,
             "relative_aim_fine_radius_px": 120,
             "aim_enter_delay_ms": 120,
