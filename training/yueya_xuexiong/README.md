@@ -70,8 +70,12 @@ validation instead of dominating the regression score.
 python tools/yueya_xuexiong_pipeline.py synthesize --count 60 --seed 20260803
 python tools/yueya_xuexiong_pipeline.py prepare --stage clean_v2
 python tools/yueya_xuexiong_pipeline.py train --stage clean_v2 --epochs 120 --imgsz 768 --batch 8
-python tools/yueya_xuexiong_pipeline.py export --weights training/yueya_xuexiong/models/yueya_xuexiong_clean_v2.pt --imgsz 768
+python tools/yueya_xuexiong_pipeline.py export --weights training/yueya_xuexiong/models/yueya_xuexiong_clean_v2.pt --imgsz 416 768
 ```
+
+The rectangular ONNX input closely matches the game window. MaaFramework can
+therefore use its native direct resize without distorting the target into a
+square, while processing substantially fewer pixels on CPU.
 
 Training starts from the generic `yolo11n.pt` checkpoint and never reuses the
 previous synthetic or mixed snow-bear checkpoints.

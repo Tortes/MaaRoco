@@ -530,7 +530,14 @@ def export_onnx(args: argparse.Namespace) -> None:
     weights = Path(args.weights) if args.weights else default_weights
     if not weights.exists():
         raise FileNotFoundError(weights)
-    output = Path(YOLO(str(weights)).export(format="onnx", imgsz=args.imgsz, simplify=True, opset=16))
+    if len(args.imgsz) not in (1, 2):
+        raise ValueError("--imgsz accepts one square size or height and width")
+    export_size = args.imgsz[0] if len(args.imgsz) == 1 else tuple(args.imgsz)
+    output = Path(
+        YOLO(str(weights)).export(
+            format="onnx", imgsz=export_size, simplify=True, opset=17
+        )
+    )
     MODELS.mkdir(parents=True, exist_ok=True)
     destination = MODELS / "yueya_xuexiong.onnx"
     shutil.copy2(output, destination)
@@ -718,7 +725,14 @@ def parser() -> argparse.ArgumentParser:
 
     exporter = commands.add_parser("export")
     exporter.add_argument("--weights")
-    exporter.add_argument("--imgsz", type=int, default=640)
+    exporter.add_argument(
+        "--imgsz",
+        type=int,
+        nargs="+",
+        default=[416, 768],
+        metavar="SIZE",
+        help="One square size, or height and width (default: 416 768).",
+    )
     exporter.set_defaults(func=export_onnx)
 
     template_match = commands.add_parser("detect-template")

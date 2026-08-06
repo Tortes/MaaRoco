@@ -51,12 +51,24 @@
   },
   "artifacts": {
     "pt_sha256": "63FF57407653DA4731B3A4765CA1A2CBC59DC0625B90DE52CB1E48497B43C7D1",
-    "onnx_sha256": "F9023BAD0CBE2290671B69B8DD7FE51473C21745AD332D459828EF09C181AB42",
+    "onnx_sha256": "4A8158C717BF20AE9D82D45C339D7F412AD942B8346C9927A6067DF341B0B8C0",
     "onnx_static_batch": 1,
-    "pt_onnx_real_validation_detection_counts_match": true
+    "onnx_static_input": [1, 3, 416, 768]
   },
   "deployment": {
     "confidence": 0.5,
-    "imgsz": 768
+    "imgsz": [416, 768],
+    "preprocess": "MaaFramework direct resize",
+    "regression": {
+      "train_positive_at_0_5": "69/69",
+      "train_negative_at_0_5": "0/3",
+      "validation_positive_at_0_5": "8/9",
+      "validation_negative_at_0_5": "0/1",
+      "validation_positive_mean_confidence": 0.840,
+      "square_baseline_validation_positive_at_0_5": "5/9",
+      "square_baseline_validation_positive_mean_confidence": 0.606,
+      "cpu_average_inference_ms": 65.4,
+      "square_baseline_cpu_average_inference_ms": 108.8
+    }
   }
 }
