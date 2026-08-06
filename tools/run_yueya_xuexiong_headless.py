@@ -54,7 +54,8 @@ def read_after(path: Path, offset: int) -> tuple[int, str]:
         return offset, ""
     with path.open("r", encoding="utf-8", errors="replace") as file:
         file.seek(offset)
-        return file.tell(), file.read()
+        fragment = file.read()
+        return file.tell(), fragment
 
 
 def start_agent(client, resource, controller, tasker) -> subprocess.Popen[str]:
@@ -172,9 +173,12 @@ def main() -> int:
             while time.monotonic() < deadline:
                 log_offset, fragment = read_after(AGENT_LOG, log_offset)
                 for line in fragment.splitlines():
-                    if "[PipaBird]" in line:
+                    if "[PipaBird]" in line or "[TargetPet]" in line:
                         attempt_report["events"].append(line)
-                    if "release: target confirmed" in line:
+                    if (
+                        "release: target confirmed" in line
+                        or "release: target box center confirmed" in line
+                    ):
                         report["confirmed_throw"] = True
                         if args.stop_after_throw:
                             tasker.post_stop().wait()
