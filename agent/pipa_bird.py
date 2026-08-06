@@ -101,6 +101,17 @@ def _box_center(box: tuple[int, int, int, int]) -> tuple[int, int]:
     return x + width // 2, y + height // 2
 
 
+def _box_center_tolerance(
+    box: tuple[int, int, int, int], maximum: int
+) -> tuple[int, int]:
+    """Scale centering tolerance to the visible target instead of the screen."""
+
+    width, height = box[2:]
+    tolerance_x = max(8, min(maximum, round(width * 0.35)))
+    tolerance_y = max(6, min(maximum, round(height * 0.35)))
+    return tolerance_x, tolerance_y
+
+
 def _clamp(value: int, limit: int) -> int:
     return max(-limit, min(limit, value))
 
@@ -578,6 +589,7 @@ class TargetPetExplore(CustomAction):
     lost_frames = 0
     locked_box: tuple[int, int, int, int] | None = None
     last_move = (0, 0)
+    search_direction_x = -1
 
     default_settings = AimSettings(
         target_recognition="TargetPetAimDetect",
@@ -585,14 +597,14 @@ class TargetPetExplore(CustomAction):
         center_tolerance=48,
         max_relative_move=360,
         settle_delay_ms=100,
-        verification_frames=1,
+        verification_frames=2,
         max_target_area_percent=55,
         min_hold_ms=80,
         throw_cooldown_ms=0,
         trajectory_base_lift_px=0,
         trajectory_distance_lift_px=0,
         detection_score_min=0.01,
-        target_lock_max_shift=1000,
+        target_lock_max_shift=360,
     )
 
     def _reset(self) -> None:
@@ -604,6 +616,7 @@ class TargetPetExplore(CustomAction):
         self.lost_frames = 0
         self.locked_box = None
         self.last_move = (0, 0)
+        self.search_direction_x = -1
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -644,7 +657,7 @@ class TargetPetExplore(CustomAction):
             param.get("aim_enter_delay_ms"), 120, 0, 1000
         )
         lost_grace_frames = _bounded_int(
-            param.get("lost_grace_frames"), 2, 0, 10
+            param.get("lost_grace_frames"), 4, 0, 10
         )
         try:
             image = controller.post_screencap().get(wait=True)
@@ -665,6 +678,7 @@ class TargetPetExplore(CustomAction):
                 self.lost_frames = 0
                 self.locked_box = None
                 self.last_move = (0, 0)
+                self.search_direction_x = -1
                 self.round_number += 1
                 _log(
                     f"aim loop {self.round_number}: Maa left down succeeded; "
@@ -699,14 +713,16 @@ class TargetPetExplore(CustomAction):
                 self.target_seen = False
                 self.lost_frames = 0
                 self.locked_box = None
-                self.last_move = (-scan_step_units, 0)
+                scan_x = self.search_direction_x * scan_step_units
+                self.last_move = (scan_x, 0)
                 _wait_controller_action(
                     controller.post_relative_move(*self.last_move),
                     "scan movement",
                 )
                 _log(
-                    f"aim loop {self.round_number}: scan left "
-                    f"relative=(-{scan_step_units},0)",
+                    f"aim loop {self.round_number}: scan "
+                    f"{'right' if scan_x > 0 else 'left'} "
+                    f"relative=({scan_x},0)",
                     "TargetPet",
                 )
                 if settings.settle_delay_ms:
@@ -747,18 +763,19 @@ class TargetPetExplore(CustomAction):
                     return True
                 if box is None:
                     previous_box = self.locked_box
-                    box = min(
-                        boxes,
-                        key=lambda candidate: (
-                            (_box_center(candidate)[0] - center_x) ** 2
-                            + (_box_center(candidate)[1] - center_y) ** 2
-                        ),
-                    )
+                    self.centered_frames = 0
+                    self.target_seen = False
+                    self.lost_frames = 0
+                    self.locked_box = None
+                    self.last_move = (0, 0)
                     _log(
-                        f"aim loop {self.round_number}: target lock replaced "
-                        f"previous={previous_box} target={box}",
+                        f"aim loop {self.round_number}: target lock abandoned "
+                        f"previous={previous_box}; reacquire next frame",
                         "TargetPet",
                     )
+                    if settings.settle_delay_ms:
+                        time.sleep(settings.settle_delay_ms / 1000)
+                    return True
                 self.locked_box = box
 
             self.target_seen = True
@@ -766,15 +783,19 @@ class TargetPetExplore(CustomAction):
             target_x, target_y = _box_center(box)
             error_x = target_x - center_x
             error_y = target_y - center_y
+            tolerance_x, tolerance_y = _box_center_tolerance(
+                box, settings.center_tolerance
+            )
             if (
-                abs(error_x) <= settings.center_tolerance
-                and abs(error_y) <= settings.center_tolerance
+                abs(error_x) <= tolerance_x
+                and abs(error_y) <= tolerance_y
             ):
                 self.centered_frames += 1
                 _log(
                     f"aim loop {self.round_number}: target box centered "
                     f"frame={self.centered_frames}/{settings.verification_frames} "
-                    f"target={box} error=({error_x},{error_y})",
+                    f"target={box} error=({error_x},{error_y}) "
+                    f"tolerance=({tolerance_x},{tolerance_y})",
                     "TargetPet",
                 )
                 if self.centered_frames < settings.verification_frames:
@@ -827,6 +848,8 @@ class TargetPetExplore(CustomAction):
                 "aim movement",
             )
             self.last_move = (move_x, move_y)
+            if move_x:
+                self.search_direction_x = 1 if move_x > 0 else -1
             _log(
                 f"aim loop {self.round_number}: relative aim target={box} "
                 f"screen_error=({error_x},{error_y}) mode={aim_mode} "
