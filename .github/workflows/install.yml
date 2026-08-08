@@ -178,6 +178,8 @@ jobs:
           GITHUB_REPO: ${{ github.repository }}
 
   release:
+    permissions:
+      contents: write
     if: ${{ needs.meta.outputs.is_release == 'true' }}
     needs: [meta, install, changelog]
     runs-on: ubuntu-latest
