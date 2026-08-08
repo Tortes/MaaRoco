@@ -108,6 +108,18 @@ def install_resource():
         install_path / "resource",
         dirs_exist_ok=True,
     )
+    snow_bear_model = (
+        working_dir
+        / "training"
+        / "yueya_xuexiong"
+        / "models"
+        / "yueya_xuexiong.onnx"
+    )
+    if not snow_bear_model.exists():
+        raise FileNotFoundError(f"Missing deployment model: {snow_bear_model}")
+    model_dir = install_path / "resource" / "model" / "detect"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(snow_bear_model, model_dir / snow_bear_model.name)
     for dirname in ("tasks", "locales"):
         source_dir = working_dir / "assets" / dirname
         if source_dir.exists():
