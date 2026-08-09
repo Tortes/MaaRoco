@@ -104,11 +104,11 @@ def _box_center(box: tuple[int, int, int, int]) -> tuple[int, int]:
 def _box_center_tolerance(
     box: tuple[int, int, int, int], maximum: int
 ) -> tuple[int, int]:
-    """Scale centering tolerance to the visible target instead of the screen."""
+    """Accept the crosshair inside the central 80% of the visible target box."""
 
     width, height = box[2:]
-    tolerance_x = max(8, min(maximum, round(width * 0.35)))
-    tolerance_y = max(6, min(maximum, round(height * 0.35)))
+    tolerance_x = max(8, round(width * 0.40))
+    tolerance_y = max(6, round(height * 0.40))
     return tolerance_x, tolerance_y
 
 
@@ -610,7 +610,7 @@ class TargetPetExplore(CustomAction):
     default_settings = AimSettings(
         target_recognition="TargetPetAimDetect",
         aim_gain_percent=100,
-        center_tolerance=48,
+        center_tolerance=200,
         max_relative_move=360,
         settle_delay_ms=35,
         verification_frames=1,
@@ -655,13 +655,13 @@ class TargetPetExplore(CustomAction):
             param.get("scan_step_units"), 220, 10, 900
         )
         relative_aim_fast_step_units = _bounded_int(
-            param.get("relative_aim_fast_step_units"), 360, 20, 1400
+            param.get("relative_aim_fast_step_units"), 720, 20, 1800
         )
         relative_aim_slow_step_units = _bounded_int(
-            param.get("relative_aim_slow_step_units"), 120, 10, 800
+            param.get("relative_aim_slow_step_units"), 260, 10, 1000
         )
         relative_aim_fine_step_units = _bounded_int(
-            param.get("relative_aim_fine_step_units"), 36, 2, 300
+            param.get("relative_aim_fine_step_units"), 80, 2, 500
         )
         relative_aim_vertical_gain_percent = _bounded_int(
             param.get("relative_aim_vertical_gain_percent"), 320, 100, 600
@@ -850,15 +850,18 @@ class TargetPetExplore(CustomAction):
 
             self.centered_frames = 0
             max_error = max(abs(error_x), abs(error_y))
-            if max_error > relative_aim_slow_radius_px:
+            if (
+                abs(error_x) > tolerance_x * 2
+                or abs(error_y) > tolerance_y * 2
+            ):
                 aim_mode = "fast"
                 base_step = relative_aim_fast_step_units
-            elif max_error > relative_aim_fine_radius_px:
-                aim_mode = "slow"
-                base_step = relative_aim_slow_step_units
-            else:
+            elif max_error <= relative_aim_fine_radius_px:
                 aim_mode = "fine"
                 base_step = relative_aim_fine_step_units
+            else:
+                aim_mode = "slow"
+                base_step = relative_aim_slow_step_units
             move_x, move_y = _relative_aim_move(
                 error_x,
                 error_y,
