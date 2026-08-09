@@ -251,36 +251,49 @@ def _select_locked_candidate(
 ) -> tuple[int, int, int, int] | None:
     """Match the locked target after a relative camera movement."""
 
-    candidates = [
-        box
-        for box in boxes
-        if _is_same_target(previous, box, max_center_shift)
-    ]
-    if not candidates:
-        return None
-
     previous_x, previous_y = _box_center(previous)
     previous_width, previous_height = previous[2:]
     move_x, move_y = last_move
+    predicted_x = previous_x - round(move_x * 0.75)
+    predicted_y = previous_y - round(move_y * 0.30)
+    tolerance_x = min(
+        max_center_shift,
+        max(64, previous_width * 2, round(abs(move_x) * 0.45)),
+    )
+    tolerance_y = min(
+        max_center_shift,
+        max(48, previous_height * 2, round(abs(move_y) * 0.25)),
+    )
+
+    candidates = []
+    for box in boxes:
+        if not _is_same_target(previous, box, max_center_shift):
+            continue
+        width_ratio = box[2] / previous_width
+        height_ratio = box[3] / previous_height
+        if not (0.65 <= width_ratio <= 1.55 and 0.65 <= height_ratio <= 1.55):
+            continue
+        current_x, current_y = _box_center(box)
+        if abs(current_x - predicted_x) > tolerance_x:
+            continue
+        if abs(current_y - predicted_y) > tolerance_y:
+            continue
+        candidates.append(box)
+
+    if not candidates:
+        return None
 
     def match_cost(box: tuple[int, int, int, int]) -> float:
         current_x, current_y = _box_center(box)
-        delta_x = current_x - previous_x
-        delta_y = current_y - previous_y
         size_cost = (
             abs(box[2] - previous_width) / previous_width
             + abs(box[3] - previous_height) / previous_height
         )
-        distance_cost = (
-            abs(delta_x) + abs(delta_y)
-        ) / max(1, max_center_shift) * 0.2
-        # A target normally moves across the image opposite to the camera input.
-        direction_cost = 0.0
-        if abs(move_x) >= 2 and abs(delta_x) >= 4 and delta_x * move_x > 0:
-            direction_cost += 2.0
-        if abs(move_y) >= 2 and abs(delta_y) >= 4 and delta_y * move_y > 0:
-            direction_cost += 1.0
-        return size_cost + distance_cost + direction_cost
+        prediction_cost = (
+            abs(current_x - predicted_x) / max(1, tolerance_x)
+            + abs(current_y - predicted_y) / max(1, tolerance_y)
+        )
+        return size_cost + prediction_cost
 
     return min(candidates, key=match_cost)
 
@@ -689,6 +702,12 @@ class TargetPetExplore(CustomAction):
         lost_grace_frames = _bounded_int(
             param.get("lost_grace_frames"), 3, 0, 10
         )
+        locked_detection_score_min = min(
+            settings.detection_score_min,
+            _bounded_float(
+                param.get("locked_detection_score_min"), 0.3, 0.01, 0.99
+            ),
+        )
         try:
             image = controller.post_screencap().get(wait=True)
             height, width = image.shape[:2]
@@ -715,7 +734,8 @@ class TargetPetExplore(CustomAction):
                     f"screen_center=({center_x},{center_y}); "
                     f"params scan={scan_step_units} fast={relative_aim_fast_step_units} "
                     f"vertical_gain={relative_aim_vertical_gain_percent}% "
-                    f"lost_grace={lost_grace_frames}",
+                    f"lost_grace={lost_grace_frames} "
+                    f"lock_score={locked_detection_score_min:.2f}",
                     "TargetPet",
                 )
                 if aim_enter_delay_ms:
@@ -723,9 +743,14 @@ class TargetPetExplore(CustomAction):
                 image = controller.post_screencap().get(wait=True)
 
             detail = context.run_recognition(settings.target_recognition, image)
+            detection_score_min = (
+                locked_detection_score_min
+                if self.locked_box is not None
+                else settings.detection_score_min
+            )
             boxes = [
                 box
-                for box in _result_boxes(detail, settings.detection_score_min)
+                for box in _result_boxes(detail, detection_score_min)
                 if _is_reasonable_target(
                     width, height, box, settings.max_target_area_percent
                 )
