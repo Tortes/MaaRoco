@@ -105,8 +105,9 @@
             "relative_aim_fine_step_units": 80,
             "relative_aim_slow_radius_px": 320,
             "relative_aim_fine_radius_px": 120,
+            "relative_aim_vertical_gain_percent": 180,
             "aim_enter_delay_ms": 20,
-            "lost_grace_frames": 1
+            "lost_grace_frames": 3
         },
         "next": [
             "YueyaXuexiongExploreAimLoop"

@@ -128,6 +128,17 @@ def _relative_aim_move(
     return move_x, move_y
 
 
+def _lost_target_follow_move(last_move: tuple[int, int]) -> tuple[int, int]:
+    move_x, move_y = last_move
+    follow_x = round(move_x * 0.45)
+    follow_y = round(move_y * 0.20)
+    if move_x and follow_x == 0:
+        follow_x = 1 if move_x > 0 else -1
+    if move_y and follow_y == 0:
+        follow_y = 1 if move_y > 0 else -1
+    return follow_x, follow_y
+
+
 def _clamp(value: int, limit: int) -> int:
     return max(-limit, min(limit, value))
 
@@ -720,9 +731,17 @@ class TargetPetExplore(CustomAction):
                 self.centered_frames = 0
                 if self.target_seen and self.lost_frames < lost_grace_frames:
                     self.lost_frames += 1
+                    follow_move = _lost_target_follow_move(self.last_move)
+                    if follow_move != (0, 0):
+                        _wait_controller_action(
+                            controller.post_relative_move(*follow_move),
+                            "lost target follow movement",
+                        )
+                        self.last_move = follow_move
                     _log(
                         f"aim loop {self.round_number}: target temporarily lost "
-                        f"frame={self.lost_frames}/{lost_grace_frames}; hold position",
+                        f"frame={self.lost_frames}/{lost_grace_frames}; "
+                        f"follow=({follow_move[0]},{follow_move[1]})",
                         "TargetPet",
                     )
                     if settings.settle_delay_ms:
@@ -772,9 +791,17 @@ class TargetPetExplore(CustomAction):
                 if box is None and self.lost_frames < lost_grace_frames:
                     self.centered_frames = 0
                     self.lost_frames += 1
+                    follow_move = _lost_target_follow_move(self.last_move)
+                    if follow_move != (0, 0):
+                        _wait_controller_action(
+                            controller.post_relative_move(*follow_move),
+                            "lost locked target follow movement",
+                        )
+                        self.last_move = follow_move
                     _log(
                         f"aim loop {self.round_number}: locked target temporarily lost "
-                        f"frame={self.lost_frames}/{lost_grace_frames}; hold position",
+                        f"frame={self.lost_frames}/{lost_grace_frames}; "
+                        f"follow=({follow_move[0]},{follow_move[1]})",
                         "TargetPet",
                     )
                     if settings.settle_delay_ms:
