@@ -143,6 +143,18 @@ def _clamp(value: int, limit: int) -> int:
     return max(-limit, min(limit, value))
 
 
+def _updated_pitch_offset(current: int, movement_y: int, limit: int) -> int:
+    """Track relative pitch movement without accumulating beyond camera range."""
+
+    return _clamp(current + movement_y, limit)
+
+
+def _pitch_recovery_move(pitch_offset: int, step: int) -> int:
+    """Return one relative movement step toward the last useful pitch anchor."""
+
+    return -_clamp(pitch_offset, step)
+
+
 def _screen_point(width: int, height: int, x: int, y: int) -> tuple[int, int]:
     return max(0, min(width - 1, x)), max(0, min(height - 1, y))
 
@@ -630,6 +642,9 @@ class TargetPetExplore(CustomAction):
     locked_box: tuple[int, int, int, int] | None = None
     last_move = (0, 0)
     search_direction_x = -1
+    pitch_offset_y = 0
+    no_target_scan_frames = 0
+    pitch_recovering = False
 
     default_settings = AimSettings(
         target_recognition="TargetPetAimDetect",
@@ -657,6 +672,9 @@ class TargetPetExplore(CustomAction):
         self.locked_box = None
         self.last_move = (0, 0)
         self.search_direction_x = -1
+        self.pitch_offset_y = 0
+        self.no_target_scan_frames = 0
+        self.pitch_recovering = False
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         controller = context.tasker.controller
@@ -708,6 +726,18 @@ class TargetPetExplore(CustomAction):
                 param.get("locked_detection_score_min"), 0.3, 0.01, 0.99
             ),
         )
+        pitch_recovery_scan_frames = _bounded_int(
+            param.get("pitch_recovery_scan_frames"), 4, 1, 100
+        )
+        pitch_recovery_step_units = _bounded_int(
+            param.get("pitch_recovery_step_units"), 240, 20, 900
+        )
+        pitch_offset_limit_units = _bounded_int(
+            param.get("pitch_offset_limit_units"), 900, 100, 2000
+        )
+        pitch_recovery_min_offset_units = _bounded_int(
+            param.get("pitch_recovery_min_offset_units"), 80, 1, 500
+        )
         try:
             image = controller.post_screencap().get(wait=True)
             height, width = image.shape[:2]
@@ -728,6 +758,8 @@ class TargetPetExplore(CustomAction):
                 self.locked_box = None
                 self.last_move = (0, 0)
                 self.search_direction_x = -1
+                self.no_target_scan_frames = 0
+                self.pitch_recovering = False
                 self.round_number += 1
                 _log(
                     f"aim loop {self.round_number}: Maa left down succeeded; "
@@ -735,7 +767,9 @@ class TargetPetExplore(CustomAction):
                     f"params scan={scan_step_units} fast={relative_aim_fast_step_units} "
                     f"vertical_gain={relative_aim_vertical_gain_percent}% "
                     f"lost_grace={lost_grace_frames} "
-                    f"lock_score={locked_detection_score_min:.2f}",
+                    f"lock_score={locked_detection_score_min:.2f} "
+                    f"pitch_recovery={pitch_recovery_scan_frames}x"
+                    f"{pitch_recovery_step_units} limit={pitch_offset_limit_units}",
                     "TargetPet",
                 )
                 if aim_enter_delay_ms:
@@ -766,10 +800,16 @@ class TargetPetExplore(CustomAction):
                             "lost target follow movement",
                         )
                         self.last_move = follow_move
+                        self.pitch_offset_y = _updated_pitch_offset(
+                            self.pitch_offset_y,
+                            follow_move[1],
+                            pitch_offset_limit_units,
+                        )
                     _log(
                         f"aim loop {self.round_number}: target temporarily lost "
                         f"frame={self.lost_frames}/{lost_grace_frames}; "
-                        f"follow=({follow_move[0]},{follow_move[1]})",
+                        f"follow=({follow_move[0]},{follow_move[1]}) "
+                        f"pitch_offset={self.pitch_offset_y}",
                         "TargetPet",
                     )
                     if settings.settle_delay_ms:
@@ -779,6 +819,39 @@ class TargetPetExplore(CustomAction):
                 self.target_seen = False
                 self.lost_frames = 0
                 self.locked_box = None
+                if self.pitch_recovering or (
+                    self.no_target_scan_frames >= pitch_recovery_scan_frames
+                    and abs(self.pitch_offset_y)
+                    >= pitch_recovery_min_offset_units
+                ):
+                    previous_pitch_offset = self.pitch_offset_y
+                    recovery_y = _pitch_recovery_move(
+                        self.pitch_offset_y, pitch_recovery_step_units
+                    )
+                    self.last_move = (0, recovery_y)
+                    _wait_controller_action(
+                        controller.post_relative_move(*self.last_move),
+                        "pitch recovery movement",
+                    )
+                    self.pitch_offset_y = _updated_pitch_offset(
+                        self.pitch_offset_y,
+                        recovery_y,
+                        pitch_offset_limit_units,
+                    )
+                    self.pitch_recovering = self.pitch_offset_y != 0
+                    _log(
+                        f"aim loop {self.round_number}: pitch recovery "
+                        f"relative=(0,{recovery_y}) offset="
+                        f"{previous_pitch_offset}->{self.pitch_offset_y}",
+                        "TargetPet",
+                    )
+                    if not self.pitch_recovering:
+                        self.no_target_scan_frames = 0
+                    if settings.settle_delay_ms:
+                        time.sleep(settings.settle_delay_ms / 1000)
+                    return True
+
+                self.no_target_scan_frames += 1
                 scan_x = self.search_direction_x * scan_step_units
                 self.last_move = (scan_x, 0)
                 _wait_controller_action(
@@ -795,6 +868,8 @@ class TargetPetExplore(CustomAction):
                     time.sleep(settings.settle_delay_ms / 1000)
                 return True
 
+            self.no_target_scan_frames = 0
+            self.pitch_recovering = False
             if self.locked_box is None:
                 box = min(
                     boxes,
@@ -826,10 +901,16 @@ class TargetPetExplore(CustomAction):
                             "lost locked target follow movement",
                         )
                         self.last_move = follow_move
+                        self.pitch_offset_y = _updated_pitch_offset(
+                            self.pitch_offset_y,
+                            follow_move[1],
+                            pitch_offset_limit_units,
+                        )
                     _log(
                         f"aim loop {self.round_number}: locked target temporarily lost "
                         f"frame={self.lost_frames}/{lost_grace_frames}; "
-                        f"follow=({follow_move[0]},{follow_move[1]})",
+                        f"follow=({follow_move[0]},{follow_move[1]}) "
+                        f"pitch_offset={self.pitch_offset_y}",
                         "TargetPet",
                     )
                     if settings.settle_delay_ms:
@@ -897,6 +978,9 @@ class TargetPetExplore(CustomAction):
                 self.lost_frames = 0
                 self.locked_box = None
                 self.last_move = (0, 0)
+                self.pitch_offset_y = 0
+                self.no_target_scan_frames = 0
+                self.pitch_recovering = False
                 if settings.throw_cooldown_ms:
                     time.sleep(settings.throw_cooldown_ms / 1000)
                 if settings.settle_delay_ms:
@@ -929,13 +1013,16 @@ class TargetPetExplore(CustomAction):
                 "aim movement",
             )
             self.last_move = (move_x, move_y)
+            self.pitch_offset_y = _updated_pitch_offset(
+                self.pitch_offset_y, move_y, pitch_offset_limit_units
+            )
             if move_x:
                 self.search_direction_x = 1 if move_x > 0 else -1
             _log(
                 f"aim loop {self.round_number}: relative aim target={box} "
                 f"screen_error=({error_x},{error_y}) mode={aim_mode} "
                 f"step={base_step} vertical_gain={relative_aim_vertical_gain_percent}% "
-                f"move=({move_x},{move_y})",
+                f"move=({move_x},{move_y}) pitch_offset={self.pitch_offset_y}",
                 "TargetPet",
             )
             if settings.settle_delay_ms:

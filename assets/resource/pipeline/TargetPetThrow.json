@@ -58,6 +58,10 @@
             "relative_aim_fine_radius_px": 120,
             "aim_enter_delay_ms": 20,
             "lost_grace_frames": 3,
+            "pitch_recovery_scan_frames": 4,
+            "pitch_recovery_step_units": 240,
+            "pitch_offset_limit_units": 900,
+            "pitch_recovery_min_offset_units": 80,
             "target_lock_max_shift": 360
         },
         "next": [
