@@ -35,7 +35,24 @@
                         "TargetPetAimLoop": {
                             "custom_action_param": {
                                 "target_recognition": "TargetPetAimDetect",
-                                "detection_score_min": 0.5
+                                "aim_gain_percent": 100,
+                                "center_tolerance": 200,
+                                "settle_delay_ms": 10,
+                                "verification_frames": 1,
+                                "max_target_area_percent": 55,
+                                "min_hold_ms": 20,
+                                "throw_cooldown_ms": 0,
+                                "detection_score_min": 0.5,
+                                "scan_step_units": 350,
+                                "relative_aim_fast_step_units": 720,
+                                "relative_aim_slow_step_units": 260,
+                                "relative_aim_fine_step_units": 80,
+                                "relative_aim_vertical_gain_percent": 180,
+                                "relative_aim_slow_radius_px": 320,
+                                "relative_aim_fine_radius_px": 120,
+                                "aim_enter_delay_ms": 20,
+                                "lost_grace_frames": 3,
+                                "target_lock_max_shift": 360
                             }
                         }
                     }
@@ -51,7 +68,24 @@
                         "TargetPetAimLoop": {
                             "custom_action_param": {
                                 "target_recognition": "TargetPetAimDetect",
-                                "detection_score_min": 0.1
+                                "aim_gain_percent": 100,
+                                "center_tolerance": 200,
+                                "settle_delay_ms": 10,
+                                "verification_frames": 1,
+                                "max_target_area_percent": 55,
+                                "min_hold_ms": 20,
+                                "throw_cooldown_ms": 0,
+                                "detection_score_min": 0.1,
+                                "scan_step_units": 350,
+                                "relative_aim_fast_step_units": 720,
+                                "relative_aim_slow_step_units": 260,
+                                "relative_aim_fine_step_units": 80,
+                                "relative_aim_vertical_gain_percent": 180,
+                                "relative_aim_slow_radius_px": 320,
+                                "relative_aim_fine_radius_px": 120,
+                                "aim_enter_delay_ms": 20,
+                                "lost_grace_frames": 3,
+                                "target_lock_max_shift": 360
                             }
                         }
                     }

@@ -623,10 +623,10 @@ class TargetPetExplore(CustomAction):
         aim_gain_percent=100,
         center_tolerance=200,
         max_relative_move=360,
-        settle_delay_ms=35,
+        settle_delay_ms=10,
         verification_frames=1,
         max_target_area_percent=55,
-        min_hold_ms=40,
+        min_hold_ms=20,
         throw_cooldown_ms=0,
         trajectory_base_lift_px=0,
         trajectory_distance_lift_px=0,
@@ -663,7 +663,7 @@ class TargetPetExplore(CustomAction):
             argv.custom_action_param, self.default_settings
         )
         scan_step_units = _bounded_int(
-            param.get("scan_step_units"), 220, 10, 900
+            param.get("scan_step_units"), 350, 10, 900
         )
         relative_aim_fast_step_units = _bounded_int(
             param.get("relative_aim_fast_step_units"), 720, 20, 1800
@@ -675,7 +675,7 @@ class TargetPetExplore(CustomAction):
             param.get("relative_aim_fine_step_units"), 80, 2, 500
         )
         relative_aim_vertical_gain_percent = _bounded_int(
-            param.get("relative_aim_vertical_gain_percent"), 320, 100, 600
+            param.get("relative_aim_vertical_gain_percent"), 180, 100, 600
         )
         relative_aim_slow_radius_px = _bounded_int(
             param.get("relative_aim_slow_radius_px"), 320, 100, 1000
@@ -684,10 +684,10 @@ class TargetPetExplore(CustomAction):
             param.get("relative_aim_fine_radius_px"), 120, 50, 500
         )
         aim_enter_delay_ms = _bounded_int(
-            param.get("aim_enter_delay_ms"), 40, 0, 1000
+            param.get("aim_enter_delay_ms"), 20, 0, 1000
         )
         lost_grace_frames = _bounded_int(
-            param.get("lost_grace_frames"), 1, 0, 10
+            param.get("lost_grace_frames"), 3, 0, 10
         )
         try:
             image = controller.post_screencap().get(wait=True)
@@ -712,7 +712,10 @@ class TargetPetExplore(CustomAction):
                 self.round_number += 1
                 _log(
                     f"aim loop {self.round_number}: Maa left down succeeded; "
-                    f"screen_center=({center_x},{center_y})",
+                    f"screen_center=({center_x},{center_y}); "
+                    f"params scan={scan_step_units} fast={relative_aim_fast_step_units} "
+                    f"vertical_gain={relative_aim_vertical_gain_percent}% "
+                    f"lost_grace={lost_grace_frames}",
                     "TargetPet",
                 )
                 if aim_enter_delay_ms:
