@@ -612,10 +612,10 @@ class TargetPetExplore(CustomAction):
         aim_gain_percent=100,
         center_tolerance=48,
         max_relative_move=360,
-        settle_delay_ms=100,
-        verification_frames=2,
+        settle_delay_ms=35,
+        verification_frames=1,
         max_target_area_percent=55,
-        min_hold_ms=80,
+        min_hold_ms=40,
         throw_cooldown_ms=0,
         trajectory_base_lift_px=0,
         trajectory_distance_lift_px=0,
@@ -652,16 +652,16 @@ class TargetPetExplore(CustomAction):
             argv.custom_action_param, self.default_settings
         )
         scan_step_units = _bounded_int(
-            param.get("scan_step_units"), 80, 10, 300
+            param.get("scan_step_units"), 220, 10, 900
         )
         relative_aim_fast_step_units = _bounded_int(
-            param.get("relative_aim_fast_step_units"), 240, 20, 1000
+            param.get("relative_aim_fast_step_units"), 360, 20, 1400
         )
         relative_aim_slow_step_units = _bounded_int(
-            param.get("relative_aim_slow_step_units"), 80, 10, 500
+            param.get("relative_aim_slow_step_units"), 120, 10, 800
         )
         relative_aim_fine_step_units = _bounded_int(
-            param.get("relative_aim_fine_step_units"), 24, 2, 200
+            param.get("relative_aim_fine_step_units"), 36, 2, 300
         )
         relative_aim_vertical_gain_percent = _bounded_int(
             param.get("relative_aim_vertical_gain_percent"), 320, 100, 600
@@ -673,10 +673,10 @@ class TargetPetExplore(CustomAction):
             param.get("relative_aim_fine_radius_px"), 120, 50, 500
         )
         aim_enter_delay_ms = _bounded_int(
-            param.get("aim_enter_delay_ms"), 120, 0, 1000
+            param.get("aim_enter_delay_ms"), 40, 0, 1000
         )
         lost_grace_frames = _bounded_int(
-            param.get("lost_grace_frames"), 4, 0, 10
+            param.get("lost_grace_frames"), 1, 0, 10
         )
         try:
             image = controller.post_screencap().get(wait=True)

@@ -8,7 +8,7 @@
                 "key": 69
             }
         },
-        "post_delay": 300,
+        "post_delay": 80,
         "next": [
             "YueyaXuexiongDetect"
         ]
@@ -22,7 +22,7 @@
         "expected": 0,
         "threshold": 0.7,
         "order_by": "Score",
-        "rate_limit": 100,
+        "rate_limit": 50,
         "timeout": -1,
         "action": "Custom",
         "custom_action": "yueya_xuexiong_aim_and_throw",
@@ -32,10 +32,10 @@
             "center_tolerance": 24,
             "max_aim_attempts": 4,
             "max_relative_move": 480,
-            "settle_delay_ms": 140,
+            "settle_delay_ms": 50,
             "verification_frames": 1,
             "max_target_area_percent": 55,
-            "min_hold_ms": 80,
+            "min_hold_ms": 40,
             "throw_cooldown_ms": 0,
             "trajectory_base_lift_px": 30,
             "trajectory_distance_lift_px": 12,
@@ -58,7 +58,7 @@
                 "key": 69
             }
         },
-        "post_delay": 300,
+        "post_delay": 80,
         "next": [
             "YueyaXuexiongExploreAimReset"
         ]
@@ -83,7 +83,7 @@
         "expected": 0,
         "threshold": 0.65,
         "order_by": "Score",
-        "rate_limit": 100
+        "rate_limit": 50
     },
     "YueyaXuexiongExploreAimLoop": {
         "recognition": "DirectHit",
@@ -93,20 +93,20 @@
             "target_recognition": "YueyaXuexiongExploreAimDetect",
             "aim_gain_percent": 100,
             "center_tolerance": 48,
-            "settle_delay_ms": 100,
+            "settle_delay_ms": 35,
             "verification_frames": 1,
             "max_target_area_percent": 55,
-            "min_hold_ms": 80,
+            "min_hold_ms": 40,
             "throw_cooldown_ms": 0,
             "detection_score_min": 0.65,
-            "scan_step_units": 80,
-            "relative_aim_fast_step_units": 240,
-            "relative_aim_slow_step_units": 80,
-            "relative_aim_fine_step_units": 24,
+            "scan_step_units": 220,
+            "relative_aim_fast_step_units": 360,
+            "relative_aim_slow_step_units": 120,
+            "relative_aim_fine_step_units": 36,
             "relative_aim_slow_radius_px": 320,
             "relative_aim_fine_radius_px": 120,
-            "aim_enter_delay_ms": 120,
-            "lost_grace_frames": 2
+            "aim_enter_delay_ms": 40,
+            "lost_grace_frames": 1
         },
         "next": [
             "YueyaXuexiongExploreAimLoop"
