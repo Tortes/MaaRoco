@@ -68,5 +68,7 @@
     "option.RandomThrowDelayRange.inputs.DelayMin.pattern_msg": "Enter an integer from 0 to 999999.",
     "option.RandomThrowDelayRange.inputs.DelayMax.label": "Delay max (ms)",
     "option.RandomThrowDelayRange.inputs.DelayMax.description": "Maximum delay between throws. Range: 0-999999.",
-    "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "Enter an integer from 0 to 999999."
+    "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "Enter an integer from 0 to 999999.",
+    "task.BattleHosting.label": "Battle Hosting",
+    "task.BattleHosting.description": "Takes over when the Chat and Battle Report controls are visible. It favors a skill with the green marker, falls back to skill 1, and captures with Capture, ball 1, then Space. After battle, it waits for the next encounter."
 }

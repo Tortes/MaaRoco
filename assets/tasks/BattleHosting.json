@@ -1,0 +1,17 @@
+{
+    "task": [
+        {
+            "name": "BattleHosting",
+            "label": "$task.BattleHosting.label",
+            "entry": "BattleHostingStart",
+            "default_check": false,
+            "description": "$task.BattleHosting.description",
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ]
+}

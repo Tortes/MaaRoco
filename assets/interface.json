@@ -50,6 +50,7 @@
     ],
     "task": [],
     "import": [
+        "tasks/BattleHosting.json",
         "tasks/RandomThrow.json",
         "tasks/TargetPetThrow.json"
     ]

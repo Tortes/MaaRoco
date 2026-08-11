@@ -68,5 +68,7 @@
     "option.RandomThrowDelayRange.inputs.DelayMin.pattern_msg": "请输入 0 到 999999 之间的整数。",
     "option.RandomThrowDelayRange.inputs.DelayMax.label": "最大间隔（毫秒）",
     "option.RandomThrowDelayRange.inputs.DelayMax.description": "最大等待时间，范围 0-999999。",
-    "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "请输入 0 到 999999 之间的整数。"
+    "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "请输入 0 到 999999 之间的整数。",
+    "task.BattleHosting.label": "战斗托管",
+    "task.BattleHosting.description": "检测到聊天和战报界面后接管战斗：优先使用带绿色标记的技能，否则使用技能 1；捕捉可用时自动点击捕捉、选择球 1 并按空格完成捕捉。战斗结束后继续等待下一场。"
 }
