@@ -119,6 +119,29 @@ jobs:
           rm -f "${ARCHIVE_FILE_PATH}"
           echo "Archive cleanup command executed for MFAAvalonia."
 
+      - name: Apply MaaRoco branding to Windows executable
+        if: matrix.os == 'win' && matrix.arch == 'x86_64'
+        shell: bash
+        run: |
+          readonly RCEDIT_SHA256="3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"
+          curl -fL --retry 3 \
+            https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe \
+            -o rcedit.exe
+          echo "$RCEDIT_SHA256  rcedit.exe" | sha256sum --check --strict
+
+          if ! command -v wine >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y wine
+          fi
+
+          WINEDEBUG=-all wine ./rcedit.exe MFA/MFAAvalonia.exe \
+            --set-icon assets/locales/MaaRoco.ico \
+            --set-version-string ProductName MaaRoco \
+            --set-version-string CompanyName MaaRoco \
+            --set-version-string FileDescription MaaRoco \
+            --set-version-string InternalName MaaRoco \
+            --set-version-string OriginalFilename MaaRoco.exe
+
       - name: Remove built-in runtime in MFA
         if: matrix.os != 'android'
         shell: bash

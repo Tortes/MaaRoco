@@ -174,7 +174,7 @@ def install_default_config():
         "EnableEdit": False,
         "HasCompletedFirstUseTutorial": True,
         "UI.HasCompletedFirstUseTutorial": True,
-        "LinkStart": "F11",
+        "UI.LiveView.EnableLiveView": False,
     }
     with open(config_dir / "config.json", "w", encoding="utf-8") as f:
         jsonc.dump(config, f, ensure_ascii=False, indent=2)
@@ -194,10 +194,24 @@ def install_default_config():
             "Win32ControlMouseType": 512,
             "Win32ControlKeyboardType": 512,
             "Win32ControlScreenCapType": "ScreenDC",
+            "UI.LiveView.EnableLiveView": False,
         }
     )
     with open(instance_path, "w", encoding="utf-8") as f:
         jsonc.dump(instance, f, ensure_ascii=False, indent=2)
+
+
+def install_global_config():
+    config_path = install_path / "appsettings.json"
+    config = {}
+    if config_path.exists():
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = jsonc.load(f)
+
+    config["LinkStart"] = "F11"
+
+    with open(config_path, "w", encoding="utf-8") as f:
+        jsonc.dump(config, f, ensure_ascii=False, indent=2)
 
 
 def remove_legacy_files():
@@ -213,7 +227,7 @@ def install_launcher():
     source_exe = install_path / "MFAAvalonia.exe"
     target_exe = install_path / "MaaRoco.exe"
     if source_exe.exists():
-        shutil.copy2(source_exe, target_exe)
+        source_exe.replace(target_exe)
 
     launcher = install_path / "MaaRoco.cmd"
     launcher.write_text(
@@ -257,6 +271,7 @@ if __name__ == "__main__":
     install_agent()
     install_chores()
     install_default_config()
+    install_global_config()
     remove_legacy_files()
     install_launcher()
 
