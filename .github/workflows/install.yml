@@ -101,7 +101,7 @@ jobs:
           actual_archive=$(sha256sum "$archive_path" | awk '{ print $1 }')
           test "$actual_archive" = "$expected_archive"
 
-          unzip -q "$archive_path" -d deps
+          unzip -qo "$archive_path" -d deps
 
           jq -r '.files | to_entries[] | [.key, .value] | @tsv' maaframework.lock.json |
             while IFS=$'\t' read -r file expected; do
