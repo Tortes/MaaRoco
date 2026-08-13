@@ -91,7 +91,7 @@ jobs:
           latest: ${{ env.MAAFW_VERSION == '' }}
           tag: ${{ env.MAAFW_VERSION }}
           out-file-path: "deps"
-          extract: true
+          extract: false
 
       - name: Verify pinned MaaFramework runtime
         shell: bash
@@ -100,6 +100,8 @@ jobs:
           expected_archive=$(jq -r '.artifact.github_digest | sub("^sha256:"; "")' maaframework.lock.json)
           actual_archive=$(sha256sum "$archive_path" | awk '{ print $1 }')
           test "$actual_archive" = "$expected_archive"
+
+          unzip -q "$archive_path" -d deps
 
           jq -r '.files | to_entries[] | [.key, .value] | @tsv' maaframework.lock.json |
             while IFS=$'\t' read -r file expected; do
