@@ -4,7 +4,8 @@ env:
   # 版本控制：
   # - 设置 VERSION 为空字符串时，下载 latest 版本
   # - 设置 VERSION 为具体版本号时（如 v1.2.3），下载指定版本
-  MAAFW_VERSION: "v5.11.0"
+  MAAFW_REPOSITORY: "Tortes/MaaFramework"
+  MAAFW_VERSION: "maaroco-d6381bd7"
   MFAA_VERSION: ""
 
 on:
@@ -82,22 +83,34 @@ jobs:
           submodules: true
 
       - name: Download MaaFramework
+        id: download_maafw
         uses: robinraju/release-downloader@v1
         with:
-          repository: MaaXYZ/MaaFramework
+          repository: ${{ env.MAAFW_REPOSITORY }}
           fileName: "MAA-${{ matrix.os }}-${{ matrix.arch }}*"
           latest: ${{ env.MAAFW_VERSION == '' }}
           tag: ${{ env.MAAFW_VERSION }}
           out-file-path: "deps"
           extract: true
 
-      - name: Apply pinned Interception RelativeMoveInput runtime
+      - name: Verify pinned MaaFramework runtime
         shell: bash
         run: |
-          cp vendor/maaframework/win-x86_64/MaaWin32ControlUnit.dll deps/bin/MaaWin32ControlUnit.dll
-          expected=$(jq -r '.files["MaaWin32ControlUnit.dll"]' maaframework.lock.json)
-          actual=$(sha256sum deps/bin/MaaWin32ControlUnit.dll | awk '{ print $1 }')
-          test "$actual" = "$expected"
+          archive_path='${{ fromJson(steps.download_maafw.outputs.downloaded_files)[0] }}'
+          expected_archive=$(jq -r '.artifact.github_digest | sub("^sha256:"; "")' maaframework.lock.json)
+          actual_archive=$(sha256sum "$archive_path" | awk '{ print $1 }')
+          test "$actual_archive" = "$expected_archive"
+
+          jq -r '.files | to_entries[] | [.key, .value] | @tsv' maaframework.lock.json |
+            while IFS=$'\t' read -r file expected; do
+              actual=$(sha256sum "deps/bin/$file" | awk '{ print $1 }')
+              if [[ "$actual" != "$expected" ]]; then
+                echo "Hash mismatch for $file: expected $expected, got $actual" >&2
+                exit 1
+              fi
+            done
+
+          rm -f "$archive_path"
 
       - name: Download MFAAvalonia
         if: matrix.os != 'android'

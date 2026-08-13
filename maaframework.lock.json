@@ -3,6 +3,11 @@
     "branch": "feat/interception-relative-move-v5.11",
     "commit": "d6381bd76171647463d62358f6fed01f2a613d79",
     "configuration": "RelWithDebInfo",
+    "release": {
+        "tag": "maaroco-d6381bd7",
+        "asset": "MAA-win-x86_64-d6381bd7.zip",
+        "url": "https://github.com/Tortes/MaaFramework/releases/download/maaroco-d6381bd7/MAA-win-x86_64-d6381bd7.zip"
+    },
     "workflow_run": 31035772030,
     "artifact": {
         "id": 8943030200,
