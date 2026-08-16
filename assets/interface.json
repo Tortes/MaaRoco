@@ -15,19 +15,6 @@
     },
     "controller": [
         {
-            "name": "Win32-Launcher",
-            "label": "$controller.Win32-Launcher.label",
-            "description": "$controller.Win32-Launcher.description",
-            "type": "Win32",
-            "win32": {
-                "class_regex": "^Progman$",
-                "window_regex": ".*",
-                "screencap": "ScreenDC",
-                "mouse": "PostMessage",
-                "keyboard": "PostMessage"
-            }
-        },
-        {
             "name": "Win32-Interception",
             "label": "$controller.Win32-Interception.label",
             "description": "$controller.Win32-Interception.description",
@@ -40,6 +27,19 @@
                 "keyboard": "Interception"
             },
             "permission_required": true
+        },
+        {
+            "name": "Win32-Launcher",
+            "label": "$controller.Win32-Launcher.label",
+            "description": "$controller.Win32-Launcher.description",
+            "type": "Win32",
+            "win32": {
+                "class_regex": "^Progman$",
+                "window_regex": ".*",
+                "screencap": "ScreenDC",
+                "mouse": "PostMessage",
+                "keyboard": "PostMessage"
+            }
         }
     ],
     "resource": [
@@ -68,6 +68,7 @@
     "import": [
         "tasks/LaunchGame.json",
         "tasks/BattleHosting.json",
+        "tasks/FlowerSeedBattle.json",
         "tasks/RandomThrow.json",
         "tasks/TargetPetThrow.json"
     ]

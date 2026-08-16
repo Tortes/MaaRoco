@@ -153,7 +153,7 @@
         "next": [
             "BattleHostingCaptureBlockedColor",
             "BattleHostingCaptureBlockedTemplate",
-            "BattleHostingCaptureClick"
+            "BattleHostingCaptureKey"
         ]
     },
     "BattleHostingCaptureBlockedColor": {
@@ -215,16 +215,12 @@
             "BattleHostingSkillDecision"
         ]
     },
-    "BattleHostingCaptureClick": {
+    "BattleHostingCaptureKey": {
         "recognition": "DirectHit",
         "action": {
-            "type": "Click",
+            "type": "ClickKey",
             "param": {
-                "target": "BattleHostingCaptureControlRecheck",
-                "duration_range": [
-                    50,
-                    80
-                ]
+                "key": 87
             }
         },
         "post_delay": 600,

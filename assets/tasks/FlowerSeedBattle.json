@@ -1,0 +1,237 @@
+{
+    "task": [
+        {
+            "name": "FlowerSeedBattle",
+            "label": "$task.FlowerSeedBattle.label",
+            "entry": "FlowerSeedBattleStart",
+            "default_check": false,
+            "description": "$task.FlowerSeedBattle.description",
+            "option": [
+                "FlowerSeedBattleRound1Skill",
+                "FlowerSeedBattleRound2Skill",
+                "FlowerSeedBattleRound3Skill",
+                "FlowerSeedBattleRound4Skill"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "FlowerSeedBattleRound1Skill": {
+            "type": "select",
+            "label": "$option.FlowerSeedBattleRound1Skill.label",
+            "description": "$option.FlowerSeedBattleSkill.description",
+            "default_case": "Default",
+            "cases": [
+                {"name": "Default", "label": "$option.FlowerSeedBattleSkill.case.Default.label", "pipeline_override": {}},
+                {
+                    "name": "Skill1",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill1.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound1Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill2",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill2.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound1Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill3",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill3.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound1Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill4",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill4.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound1Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                        }
+                    }
+                }
+            ]
+        },
+        "FlowerSeedBattleRound2Skill": {
+            "type": "select",
+            "label": "$option.FlowerSeedBattleRound2Skill.label",
+            "description": "$option.FlowerSeedBattleSkill.description",
+            "default_case": "Default",
+            "cases": [
+                {"name": "Default", "label": "$option.FlowerSeedBattleSkill.case.Default.label", "pipeline_override": {}},
+                {
+                    "name": "Skill1",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill1.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound2Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill2",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill2.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound2Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill3",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill3.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound2Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill4",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill4.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound2Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                        }
+                    }
+                }
+            ]
+        },
+        "FlowerSeedBattleRound3Skill": {
+            "type": "select",
+            "label": "$option.FlowerSeedBattleRound3Skill.label",
+            "description": "$option.FlowerSeedBattleSkill.description",
+            "default_case": "Default",
+            "cases": [
+                {"name": "Default", "label": "$option.FlowerSeedBattleSkill.case.Default.label", "pipeline_override": {}},
+                {
+                    "name": "Skill1",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill1.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound3Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill2",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill2.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound3Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill3",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill3.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound3Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill4",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill4.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound3Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                        }
+                    }
+                }
+            ]
+        },
+        "FlowerSeedBattleRound4Skill": {
+            "type": "select",
+            "label": "$option.FlowerSeedBattleRound4Skill.label",
+            "description": "$option.FlowerSeedBattleSkill.description",
+            "default_case": "Default",
+            "cases": [
+                {"name": "Default", "label": "$option.FlowerSeedBattleSkill.case.Default.label", "pipeline_override": {}},
+                {
+                    "name": "Skill1",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill1.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound4Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill2",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill2.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound4Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill3",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill3.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound4Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                        }
+                    }
+                },
+                {
+                    "name": "Skill4",
+                    "label": "$option.FlowerSeedBattleSkill.case.Skill4.label",
+                    "pipeline_override": {
+                        "FlowerSeedBattleRound4Skill": {
+                            "recognition": "And",
+                            "all_of": ["FlowerSeedBattleSkillUiVisible"],
+                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

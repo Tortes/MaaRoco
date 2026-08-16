@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import re
 import shutil
 import sys
 
@@ -18,6 +19,7 @@ from configure import configure_ocr_model
 working_dir = Path(__file__).parent.parent.resolve()
 install_path = working_dir / Path("install")
 version = len(sys.argv) > 1 and sys.argv[1] or "v0.0.1"
+STABLE_RELEASE_VERSION = re.compile(r"^v\d+\.\d+\.\d+$")
 
 # the first parameter is self name
 if sys.argv.__len__() < 4:
@@ -52,6 +54,11 @@ def get_dotnet_platform_tag():
         sys.exit(1)
 
     return platform_tag
+
+
+def is_release_version(value: str) -> bool:
+    """Only stable release tags are allowed to check and install updates."""
+    return STABLE_RELEASE_VERSION.fullmatch(value) is not None
 
 
 def install_deps():
@@ -162,15 +169,16 @@ def install_chores():
 def install_default_config():
     config_dir = install_path / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
+    enable_release_updates = is_release_version(version)
     config = {
         "CurrentLanguage": "zh-CN",
         "ResourceUpdateChannelInitialized": True,
-        "EnableAutoUpdateResource": False,
-        "AutoUpdateResource": False,
+        "EnableAutoUpdateResource": enable_release_updates,
         "EnableAutoUpdateMFA": False,
-        "EnableCheckVersion": False,
+        "EnableCheckVersion": enable_release_updates,
         "DownloadSourceIndex": 0,
-        "ResourceUpdateChannelIndex": 0,
+        "UIUpdateChannelIndex": 2 if enable_release_updates else 0,
+        "ResourceUpdateChannelIndex": 2 if enable_release_updates else 0,
         "EnableEdit": False,
         "HasCompletedFirstUseTutorial": True,
         "UI.HasCompletedFirstUseTutorial": True,
@@ -190,7 +198,7 @@ def install_default_config():
     instance.update(
         {
             "CurrentControllerName": "Win32-Interception",
-            "CurrentController": 1,
+            "CurrentController": "Win32",
             "Win32ControlMouseType": 512,
             "Win32ControlKeyboardType": 512,
             "Win32ControlScreenCapType": "ScreenDC",

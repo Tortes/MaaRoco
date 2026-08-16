@@ -1,0 +1,196 @@
+{
+    "FlowerSeedBattleStart": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep1ChallengePrompt"
+        ]
+    },
+    "FlowerSeedBattleStep1ChallengePrompt": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_step1_challenge_prompt.png",
+        "roi": [
+            700,
+            330,
+            260,
+            110
+        ],
+        "threshold": 0.78,
+        "method": 5,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 70
+            }
+        },
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep2ChallengeButton"
+        ]
+    },
+    "FlowerSeedBattleStep2ChallengeButton": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_step2_challenge_button.png",
+        "roi": [
+            650,
+            550,
+            260,
+            130
+        ],
+        "threshold": 0.86,
+        "method": 5,
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    660,
+                    590,
+                    170,
+                    60
+                ],
+                "duration_range": [
+                    50,
+                    80
+                ]
+            }
+        },
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep3StartButton"
+        ]
+    },
+    "FlowerSeedBattleStep3StartButton": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_step3_start_button.png",
+        "roi": [
+            650,
+            530,
+            260,
+            130
+        ],
+        "threshold": 0.86,
+        "method": 5,
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    660,
+                    570,
+                    170,
+                    65
+                ],
+                "duration_range": [
+                    50,
+                    80
+                ]
+            }
+        },
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound1Skill"
+        ]
+    },
+    "FlowerSeedBattleSkillUiVisible": {
+        "recognition": "TemplateMatch",
+        "template": "battle_target.png",
+        "roi": [
+            0,
+            560,
+            180,
+            160
+        ],
+        "threshold": 0.85,
+        "method": 5
+    },
+    "FlowerSeedBattleRound1Skill": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound2Skill"
+        ]
+    },
+    "FlowerSeedBattleRound2Skill": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound3Skill"
+        ]
+    },
+    "FlowerSeedBattleRound3Skill": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound4Skill"
+        ]
+    },
+    "FlowerSeedBattleRound4Skill": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 250,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound1Skill"
+        ]
+    },
+    "FlowerSeedBattleStep6CaptureMenu": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_step6_capture_menu.png",
+        "roi": [
+            136,
+            140,
+            167,
+            90
+        ],
+        "threshold": 0.9,
+        "method": 5,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 49
+            }
+        },
+        "post_delay": 1000,
+        "next": [
+            "FlowerSeedBattleConfirmCapture"
+        ]
+    },
+    "FlowerSeedBattleConfirmCapture": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 32
+            }
+        },
+        "post_delay": 1200,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStep1ChallengePrompt"
+        ]
+    }
+}

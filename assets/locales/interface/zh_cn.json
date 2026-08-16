@@ -79,5 +79,17 @@
     "option.RandomThrowDelayRange.inputs.DelayMax.description": "最大等待时间，范围 0-999999。",
     "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "请输入 0 到 999999 之间的整数。",
     "task.BattleHosting.label": "战斗托管",
-    "task.BattleHosting.description": "检测到聊天和战报界面后接管战斗：优先使用带绿色标记的技能，否则使用技能 1；捕捉可用时自动点击捕捉、选择球 1 并按空格完成捕捉。战斗结束后继续等待下一场。"
+    "task.BattleHosting.description": "检测到聊天和战报界面后接管战斗：优先使用带绿色标记的技能，否则使用技能 1；捕捉可用时按 W 打开捕捉、选择球 1 并按空格完成捕捉。战斗结束后继续等待下一场。",
+    "task.FlowerSeedBattle.label": "花种战斗",
+    "task.FlowerSeedBattle.description": "依次识别挑战入口、花种确认和挑战准备；按配置循环执行最多四轮技能，每轮都会等待技能界面出现。捕捉可用后选择球 1 并按空格，完成后回到入口等待下一轮。",
+    "option.FlowerSeedBattleRound1Skill.label": "第一轮技能",
+    "option.FlowerSeedBattleRound2Skill.label": "第二轮技能",
+    "option.FlowerSeedBattleRound3Skill.label": "第三轮技能",
+    "option.FlowerSeedBattleRound4Skill.label": "第四轮技能",
+    "option.FlowerSeedBattleSkill.description": "选择本轮按下的技能数字；默认表示跳过本轮。全部已选技能执行后优先检查捕捉，尚不可捕捉时从第一轮重新循环。",
+    "option.FlowerSeedBattleSkill.case.Default.label": "默认（跳过）",
+    "option.FlowerSeedBattleSkill.case.Skill1.label": "技能 1",
+    "option.FlowerSeedBattleSkill.case.Skill2.label": "技能 2",
+    "option.FlowerSeedBattleSkill.case.Skill3.label": "技能 3",
+    "option.FlowerSeedBattleSkill.case.Skill4.label": "技能 4"
 }
