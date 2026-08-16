@@ -1,0 +1,61 @@
+{
+    "LaunchGameStart": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "Command",
+            "param": {
+                "exec": "C:\\Program Files\\WeGame\\wegame.exe",
+                "args": [
+                    "/StartFor=2002304"
+                ],
+                "detach": true
+            }
+        },
+        "post_delay": 0,
+        "next": [
+            "LaunchGameWaitForWindow"
+        ]
+    },
+    "LaunchGameWaitForWindow": {
+        "recognition": "DirectHit",
+        "action": "Custom",
+        "custom_action": "launch_game_wait_and_run",
+        "custom_action_param": {
+            "title_contains": "洛克王国：世界",
+            "class_name": "UnrealWindow",
+            "wegame_title_contains": "WeGame",
+            "wegame_class_name": "",
+            "wegame_click_entry": "LaunchGameClickWeGameStart",
+            "wegame_mouse_method": 1,
+            "wegame_keyboard_method": 1,
+            "timeout_ms": 180000,
+            "poll_interval_ms": 500,
+            "mouse_method": 512,
+            "keyboard_method": 512,
+            "downstream_entry": "BattleHostingStart"
+        },
+        "next": []
+    },
+    "LaunchGameClickWeGameStart": {
+        "recognition": "TemplateMatch",
+        "template": "wegame_start_button.png",
+        "roi": [
+            -330,
+            -90,
+            300,
+            75
+        ],
+        "threshold": 0.82,
+        "method": 3,
+        "action": "Click",
+        "post_delay": 1000,
+        "rate_limit": 500,
+        "timeout": 120000,
+        "next": []
+    },
+    "LaunchGameControllerReady": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "next": []
+    }
+}

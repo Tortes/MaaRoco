@@ -4,6 +4,7 @@ from maa.agent.agent_server import AgentServer
 from maa.tasker import Tasker
 
 import pipa_bird
+import launch_game
 
 
 def main() -> None:

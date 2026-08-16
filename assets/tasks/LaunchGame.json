@@ -1,0 +1,48 @@
+{
+    "task": [
+        {
+            "name": "LaunchGame",
+            "label": "$task.LaunchGame.label",
+            "entry": "LaunchGameStart",
+            "default_check": false,
+            "description": "$task.LaunchGame.description",
+            "option": [
+                "WeGamePath"
+            ],
+            "controller": [
+                "Win32-Launcher",
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "WeGamePath": {
+            "type": "input",
+            "label": "$option.WeGamePath.label",
+            "description": "$option.WeGamePath.description",
+            "inputs": [
+                {
+                    "name": "WeGameExecutable",
+                    "label": "$option.WeGamePath.inputs.WeGameExecutable.label",
+                    "description": "$option.WeGamePath.inputs.WeGameExecutable.description",
+                    "pipeline_type": "string",
+                    "default": "C:\\Program Files\\WeGame\\wegame.exe",
+                    "verify": "^.+[\\\\/][Ww][Ee][Gg][Aa][Mm][Ee]\\.exe$",
+                    "pattern_msg": "$option.WeGamePath.inputs.WeGameExecutable.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "LaunchGameStart": {
+                    "action": {
+                        "param": {
+                            "exec": "{WeGameExecutable}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
