@@ -35,7 +35,8 @@
                         "FlowerSeedBattleRound1Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                            "action": {"type": "ClickKey", "param": {"key": 49}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -46,7 +47,8 @@
                         "FlowerSeedBattleRound1Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                            "action": {"type": "ClickKey", "param": {"key": 50}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -57,7 +59,8 @@
                         "FlowerSeedBattleRound1Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                            "action": {"type": "ClickKey", "param": {"key": 51}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -68,7 +71,8 @@
                         "FlowerSeedBattleRound1Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                            "action": {"type": "ClickKey", "param": {"key": 52}},
+                            "post_delay": 1000
                         }
                     }
                 }
@@ -88,7 +92,8 @@
                         "FlowerSeedBattleRound2Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                            "action": {"type": "ClickKey", "param": {"key": 49}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -99,7 +104,8 @@
                         "FlowerSeedBattleRound2Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                            "action": {"type": "ClickKey", "param": {"key": 50}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -110,7 +116,8 @@
                         "FlowerSeedBattleRound2Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                            "action": {"type": "ClickKey", "param": {"key": 51}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -121,7 +128,8 @@
                         "FlowerSeedBattleRound2Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                            "action": {"type": "ClickKey", "param": {"key": 52}},
+                            "post_delay": 1000
                         }
                     }
                 }
@@ -141,7 +149,8 @@
                         "FlowerSeedBattleRound3Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                            "action": {"type": "ClickKey", "param": {"key": 49}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -152,7 +161,8 @@
                         "FlowerSeedBattleRound3Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                            "action": {"type": "ClickKey", "param": {"key": 50}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -163,7 +173,8 @@
                         "FlowerSeedBattleRound3Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                            "action": {"type": "ClickKey", "param": {"key": 51}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -174,7 +185,8 @@
                         "FlowerSeedBattleRound3Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                            "action": {"type": "ClickKey", "param": {"key": 52}},
+                            "post_delay": 1000
                         }
                     }
                 }
@@ -194,7 +206,8 @@
                         "FlowerSeedBattleRound4Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 49}}
+                            "action": {"type": "ClickKey", "param": {"key": 49}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -205,7 +218,8 @@
                         "FlowerSeedBattleRound4Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 50}}
+                            "action": {"type": "ClickKey", "param": {"key": 50}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -216,7 +230,8 @@
                         "FlowerSeedBattleRound4Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 51}}
+                            "action": {"type": "ClickKey", "param": {"key": 51}},
+                            "post_delay": 1000
                         }
                     }
                 },
@@ -227,7 +242,8 @@
                         "FlowerSeedBattleRound4Skill": {
                             "recognition": "And",
                             "all_of": ["FlowerSeedBattleSkillUiVisible"],
-                            "action": {"type": "ClickKey", "param": {"key": 52}}
+                            "action": {"type": "ClickKey", "param": {"key": 52}},
+                            "post_delay": 1000
                         }
                     }
                 }
