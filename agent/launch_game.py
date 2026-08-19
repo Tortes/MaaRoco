@@ -141,7 +141,9 @@ class LaunchGameWaitAndRun(CustomAction):
         wegame_click_entry = str(
             param.get("wegame_click_entry", "LaunchGameClickWeGameStart")
         )
-        downstream_entry = str(param.get("downstream_entry", "BattleHostingStart"))
+        downstream_entry = str(
+            param.get("downstream_entry", "LaunchGameEnterWorldStart")
+        )
         timeout_ms = _positive_int(param.get("timeout_ms"), 180_000, 900_000)
         poll_interval_ms = _positive_int(
             param.get("poll_interval_ms"), 500, 10_000

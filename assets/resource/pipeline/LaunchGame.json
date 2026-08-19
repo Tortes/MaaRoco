@@ -32,7 +32,7 @@
             "poll_interval_ms": 500,
             "mouse_method": 512,
             "keyboard_method": 512,
-            "downstream_entry": "BattleHostingStart"
+            "downstream_entry": "LaunchGameEnterWorldStart"
         },
         "next": []
     },
@@ -40,12 +40,13 @@
         "recognition": "TemplateMatch",
         "template": "wegame_start_button.png",
         "roi": [
-            -330,
-            -90,
+            -310,
+            -70,
             300,
-            75
+            65
         ],
         "threshold": 0.82,
+        "order_by": "Score",
         "method": 3,
         "action": "Click",
         "post_delay": 1000,
@@ -57,5 +58,65 @@
         "recognition": "DirectHit",
         "action": "DoNothing",
         "next": []
+    },
+    "LaunchGameEnterWorldStart": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 500,
+        "timeout": 120000,
+        "next": [
+            "LaunchGameEnterWorldButton"
+        ]
+    },
+    "LaunchGameEnterWorldButton": {
+        "recognition": "TemplateMatch",
+        "template": "game_enter_world_button.png",
+        "roi": [
+            520,
+            500,
+            270,
+            90
+        ],
+        "threshold": 0.9,
+        "order_by": "Score",
+        "method": 3,
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    630,
+                    530,
+                    40,
+                    24
+                ]
+            }
+        },
+        "post_delay": 1000,
+        "rate_limit": 500,
+        "timeout": 120000,
+        "next": [
+            "LaunchGameEnterWorldButtonGone",
+            "LaunchGameEnterWorldButton"
+        ]
+    },
+    "LaunchGameEnterWorldButtonGone": {
+        "recognition": "TemplateMatch",
+        "template": "game_enter_world_button.png",
+        "roi": [
+            520,
+            500,
+            270,
+            90
+        ],
+        "threshold": 0.9,
+        "order_by": "Score",
+        "method": 3,
+        "inverse": true,
+        "action": "DoNothing",
+        "post_delay": 1000,
+        "next": [
+            "BattleHostingStart"
+        ]
     }
 }
