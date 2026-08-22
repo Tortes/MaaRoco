@@ -17,6 +17,8 @@ on:
     paths:
       - ".github/workflows/install.yml"
       - "assets/**"
+      - "tools/bundle_embedded_python.ps1"
+      - "tools/runtime-requirements.txt"
       - "**.py"
   pull_request:
     branches:
@@ -24,6 +26,8 @@ on:
     paths:
       - ".github/workflows/install.yml"
       - "assets/**"
+      - "tools/bundle_embedded_python.ps1"
+      - "tools/runtime-requirements.txt"
       - "**.py"
   workflow_dispatch:
 
@@ -186,7 +190,49 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MaaRoco-${{ matrix.os }}-${{ matrix.arch }}
+          name: MaaRoco-${{ matrix.os }}-${{ matrix.arch }}-base
+          path: "install"
+
+  bundle_python:
+    name: Bundle embedded Python
+    needs: [meta, install]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: MaaRoco-win-x86_64-base
+          path: install
+
+      - name: Bundle CPython and runtime dependencies
+        shell: pwsh
+        run: >-
+          ./tools/bundle_embedded_python.ps1
+          -InstallRoot ./install
+          -Requirements ./tools/runtime-requirements.txt
+
+      - name: Verify packaged Agent entry point
+        shell: pwsh
+        run: |
+          $interface = Get-Content ./install/interface.json -Raw | ConvertFrom-Json
+          if ($interface.agent.child_exec -ne "./python/python.exe") {
+            throw "Unexpected Agent executable: $($interface.agent.child_exec)"
+          }
+          if (-not (Test-Path ./install/python/python.exe -PathType Leaf)) {
+            throw "Embedded Python executable is missing"
+          }
+          if (-not (Test-Path ./install/agent/main.py -PathType Leaf)) {
+            throw "Agent entry point is missing"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MaaRoco-win-x86_64
           path: "install"
 
   changelog:
@@ -219,12 +265,13 @@ jobs:
     permissions:
       contents: write
     if: ${{ needs.meta.outputs.is_release == 'true' }}
-    needs: [meta, install, changelog]
+    needs: [meta, bundle_python, changelog]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: assets
+          name: MaaRoco-win-x86_64
+          path: assets/MaaRoco-win-x86_64
 
       - run: |
           cd assets

@@ -1,0 +1,9 @@
+# Python dependencies imported by the packaged MaaRoco agent.
+# Keep every transitive dependency pinned so release artifacts are reproducible.
+MaaFw==5.12.3
+MaaAgentBinary==1.0.1
+StrEnum==0.4.15
+numpy==2.2.6
+opencv-python==4.12.0.88
+interception-python==1.13.6
+pywin32==312
