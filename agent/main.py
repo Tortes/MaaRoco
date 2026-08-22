@@ -1,4 +1,12 @@
 import sys
+from pathlib import Path
+
+# CPython's embeddable distribution uses an isolated ``._pth`` file and does
+# not automatically add the executed script's directory to sys.path. Make the
+# sibling Agent modules importable regardless of how MFA launches this file.
+agent_dir = str(Path(__file__).resolve().parent)
+if agent_dir not in sys.path:
+    sys.path.insert(0, agent_dir)
 
 from maa.agent.agent_server import AgentServer
 from maa.tasker import Tasker

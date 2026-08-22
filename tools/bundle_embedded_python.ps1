@@ -115,6 +115,24 @@ print("MaaRoco embedded Python smoke test passed")
         if ($LASTEXITCODE -ne 0) {
             throw "Agent syntax check failed with exit code $LASTEXITCODE"
         }
+
+        $env:MAAROCO_AGENT_ENTRY = Join-Path $agentPath "main.py"
+        $agentSmokeTest = @"
+import os
+import runpy
+
+runpy.run_path(os.environ["MAAROCO_AGENT_ENTRY"], run_name="maaroco_agent_smoke")
+print("MaaRoco Agent entry point import passed")
+"@
+        try {
+            & $embeddedPython -I -c $agentSmokeTest
+            if ($LASTEXITCODE -ne 0) {
+                throw "Agent entry point import failed with exit code $LASTEXITCODE"
+            }
+        }
+        finally {
+            Remove-Item Env:MAAROCO_AGENT_ENTRY -ErrorAction SilentlyContinue
+        }
     }
 }
 finally {
