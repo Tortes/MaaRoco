@@ -79,7 +79,7 @@
     "option.RandomThrowDelayRange.inputs.DelayMax.description": "Maximum delay between throws. Range: 0-999999.",
     "option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg": "Enter an integer from 0 to 999999.",
     "task.BattleHosting.label": "Battle Hosting",
-    "task.BattleHosting.description": "Takes over when the Chat and Battle Report controls are visible. It favors a skill with the green marker, falls back to skill 1, and captures with W, ball 1, then Space. After battle, it waits for the next encounter.",
+    "task.BattleHosting.description": "Takes over when the Chat and Battle Report controls are visible. It favors a skill with the green marker, falls back to skill 1, and captures by pressing W twice, 1 twice, and Space twice at one-second intervals without recognizing the ball menu or Space prompt. After battle, it waits for the next encounter.",
     "task.FlowerSeedBattle.label": "Flower Seed Battle",
     "task.FlowerSeedBattle.description": "Recognizes the challenge prompt, flower confirmation, and battle preparation, then loops through up to four configured skill turns while waiting for the skill UI each time. When capture becomes available, it selects ball 1, presses Space, and returns to the entrance.",
     "option.FlowerSeedBattleRound1Skill.label": "Round 1 skill",

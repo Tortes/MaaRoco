@@ -53,44 +53,26 @@
         "post_delay": 0,
         "timeout": -1,
         "next": [
-            "BattleHostingSpacePrompt",
-            "BattleHostingBallMenu",
             "BattleHostingCaptureControlVisible",
             "BattleHostingExitCandidate",
             "BattleHostingWaitForControls"
         ]
     },
-    "BattleHostingSpacePrompt": {
-        "recognition": "TemplateMatch",
-        "template": "battle_space_prompt.png",
-        "roi": [
-            400,
-            250,
-            650,
-            300
-        ],
-        "threshold": 0.85,
+    "BattleHostingSelectBall": {
+        "recognition": "DirectHit",
         "action": {
             "type": "ClickKey",
             "param": {
-                "key": 32
+                "key": 49
             }
         },
-        "post_delay": 1200,
+        "post_delay": 1000,
         "next": [
-            "BattleHostingMainLoop"
+            "BattleHostingSelectBallRepeat"
         ]
     },
-    "BattleHostingBallMenu": {
-        "recognition": "TemplateMatch",
-        "template": "battle_ball_menu.png",
-        "roi": [
-            40,
-            620,
-            220,
-            100
-        ],
-        "threshold": 0.78,
+    "BattleHostingSelectBallRepeat": {
+        "recognition": "DirectHit",
         "action": {
             "type": "ClickKey",
             "param": {
@@ -110,7 +92,20 @@
                 "key": 32
             }
         },
-        "post_delay": 1200,
+        "post_delay": 1000,
+        "next": [
+            "BattleHostingConfirmCaptureRepeat"
+        ]
+    },
+    "BattleHostingConfirmCaptureRepeat": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 32
+            }
+        },
+        "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
         ]
@@ -223,9 +218,22 @@
                 "key": 87
             }
         },
-        "post_delay": 600,
+        "post_delay": 1000,
         "next": [
-            "BattleHostingMainLoop"
+            "BattleHostingCaptureKeyRepeat"
+        ]
+    },
+    "BattleHostingCaptureKeyRepeat": {
+        "recognition": "DirectHit",
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 87
+            }
+        },
+        "post_delay": 1000,
+        "next": [
+            "BattleHostingSelectBall"
         ]
     },
     "BattleHostingCaptureStateLost": {
@@ -264,8 +272,6 @@
         "timeout": -1,
         "next": [
             "BattleHostingBattleReady",
-            "BattleHostingSpacePrompt",
-            "BattleHostingBallMenu",
             "BattleHostingCaptureControlVisible"
         ]
     },
