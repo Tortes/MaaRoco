@@ -53,9 +53,46 @@
         "post_delay": 0,
         "timeout": -1,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingCaptureControlVisible",
             "BattleHostingExitCandidate",
             "BattleHostingWaitForControls"
+        ]
+    },
+    "BattleHostingShinyMarker": {
+        "recognition": "ColorMatch",
+        "roi": [
+            -40,
+            43,
+            14,
+            22
+        ],
+        "method": 40,
+        "lower": [
+            [
+                18,
+                100,
+                160
+            ]
+        ],
+        "upper": [
+            [
+                42,
+                255,
+                255
+            ]
+        ],
+        "count": 8,
+        "connected": true,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 27
+            }
+        },
+        "post_delay": 1000,
+        "next": [
+            "BattleHostingMainLoop"
         ]
     },
     "BattleHostingSelectBall": {
