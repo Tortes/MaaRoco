@@ -2,6 +2,7 @@ from pathlib import Path
 
 import re
 import shutil
+import subprocess
 import sys
 
 try:
@@ -155,6 +156,34 @@ def install_agent():
         shutil.copytree(source_dir, install_path / "agent", dirs_exist_ok=True)
 
 
+def install_python_runtime():
+    """Complete local Windows installs; CI bundles its base artifact separately."""
+    if os_name != "win" or arch != "x86_64" or "--skip-python" in sys.argv:
+        return
+    if sys.platform != "win32":
+        raise RuntimeError("Bundle Windows Python on Windows, or use --skip-python for a base artifact.")
+    executable = install_path / "python" / "python.exe"
+    if not executable.is_file():
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        if not shell:
+            raise RuntimeError("PowerShell is required to bundle embedded Python.")
+        subprocess.run(
+            [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+             str(working_dir / "tools" / "bundle_embedded_python.ps1"),
+             "-InstallRoot", str(install_path), "-HostPython", sys.executable],
+            check=True,
+        )
+    subprocess.run(
+        [str(executable), "-I", "-c",
+         "import cv2, numpy, interception, win32api; "
+         "from maa.agent.agent_server import AgentServer; "
+         "import runpy; runpy.run_path('agent/main.py', run_name='maaroco_install_check'); "
+         "print('Installed Python and Agent import check passed')"],
+        cwd=install_path,
+        check=True,
+    )
+
+
 def install_chores():
     shutil.copy2(
         working_dir / "README.md",
@@ -282,5 +311,6 @@ if __name__ == "__main__":
     install_global_config()
     remove_legacy_files()
     install_launcher()
+    install_python_runtime()
 
     print(f"Install to {install_path} successfully.")

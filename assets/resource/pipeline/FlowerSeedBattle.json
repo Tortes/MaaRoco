@@ -6,6 +6,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleResultVisible",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep1ChallengePrompt"
         ]
@@ -168,7 +169,7 @@
             167,
             90
         ],
-        "threshold": 0.9,
+        "threshold": 0.85,
         "method": 5,
         "action": {
             "type": "ClickKey",
@@ -277,8 +278,95 @@
         },
         "post_delay": 0,
         "next": [
+            "FlowerSeedBattleResultVisible",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep1ChallengePrompt"
+        ]
+    },
+    "FlowerSeedBattleResultVisible": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_result_again.png",
+        "roi": [
+            600,
+            640,
+            280,
+            70
+        ],
+        "threshold": 0.85,
+        "action": "DoNothing",
+        "post_delay": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleBlueStaminaEnough",
+            "FlowerSeedBattlePurpleStaminaEnough",
+            "FlowerSeedBattleExitResult"
+        ]
+    },
+    "FlowerSeedBattleBlueStaminaEnough": {
+        "recognition": "OCR",
+        "roi": [
+            -320,
+            30,
+            68,
+            20
+        ],
+        "only_rec": true,
+        "expected": "^\\s*0*([2-9][0-9]|[1-9][0-9]{2,})\\s*/\\s*[0-9]+\\s*$",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "next": [
+            "FlowerSeedBattleChallengeAgain"
+        ]
+    },
+    "FlowerSeedBattlePurpleStaminaEnough": {
+        "recognition": "OCR",
+        "roi": [
+            -174,
+            30,
+            93,
+            20
+        ],
+        "only_rec": false,
+        "expected": "^\\s*0*([2-9][0-9]|[1-9][0-9]{2,})\\s*$",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "next": [
+            "FlowerSeedBattleChallengeAgain"
+        ]
+    },
+    "FlowerSeedBattleChallengeAgain": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_result_again.png",
+        "roi": [
+            600,
+            640,
+            280,
+            70
+        ],
+        "threshold": 0.85,
+        "action": "Click",
+        "post_delay": 1000,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleStepEndPrompt",
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound1Skill"
+        ]
+    },
+    "FlowerSeedBattleExitResult": {
+        "recognition": "TemplateMatch",
+        "template": "flower_seed_result_exit.png",
+        "roi": [
+            450,
+            640,
+            220,
+            70
+        ],
+        "threshold": 0.85,
+        "action": "Click",
+        "post_delay": 500,
+        "next": [
+            "FlowerSeedBattleStopAfterCancel"
         ]
     }
 }

@@ -2,12 +2,40 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 original_argv = sys.argv
 sys.argv = ["install.py", "v0.0.0-dev", "win", "x86_64"]
 import install
 sys.argv = original_argv
+
+
+class InstallPythonRuntimeTest(unittest.TestCase):
+    def test_missing_runtime_is_bundled_and_verified(self):
+        with tempfile.TemporaryDirectory() as temp_dir, \
+                patch.object(install, "install_path", Path(temp_dir)), \
+                patch.object(sys, "platform", "win32"), \
+                patch.object(sys, "argv", ["install.py"]), \
+                patch.object(install.shutil, "which", return_value="pwsh"), \
+                patch.object(install.subprocess, "run") as run:
+            install.install_python_runtime()
+            self.assertEqual(run.call_count, 2)
+            self.assertIn("-HostPython", run.call_args_list[0].args[0])
+            self.assertTrue(run.call_args.kwargs["check"])
+
+    def test_existing_runtime_is_verified_without_downloading(self):
+        with tempfile.TemporaryDirectory() as temp_dir, \
+                patch.object(install, "install_path", Path(temp_dir)), \
+                patch.object(sys, "platform", "win32"), \
+                patch.object(sys, "argv", ["install.py"]), \
+                patch.object(install.subprocess, "run") as run:
+            executable = Path(temp_dir) / "python" / "python.exe"
+            executable.parent.mkdir()
+            executable.touch()
+            install.install_python_runtime()
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0][0], str(executable))
 
 
 class InstallDefaultConfigTest(unittest.TestCase):
