@@ -13,6 +13,7 @@ from maa.tasker import Tasker
 
 import pipa_bird
 import launch_game
+import battle_input
 
 
 def main() -> None:

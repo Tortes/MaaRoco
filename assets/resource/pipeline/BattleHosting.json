@@ -6,8 +6,10 @@
         "rate_limit": 350,
         "timeout": -1,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingBattleReady"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingChatVisible": {
         "recognition": "TemplateMatch",
@@ -45,7 +47,8 @@
         "post_delay": 250,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingMainLoop": {
         "recognition": "DirectHit",
@@ -57,95 +60,107 @@
             "BattleHostingCaptureControlVisible",
             "BattleHostingExitCandidate",
             "BattleHostingWaitForControls"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingShinyMarker": {
-        "recognition": "ColorMatch",
+        "recognition": "TemplateMatch",
+        "template": "battle_shiny_marker.png",
         "roi": [
-            -40,
-            43,
-            14,
-            22
+            640,
+            100,
+            0,
+            520
         ],
-        "method": 40,
-        "lower": [
-            [
-                18,
-                100,
-                160
-            ]
-        ],
-        "upper": [
-            [
-                42,
-                255,
-                255
-            ]
-        ],
-        "count": 8,
-        "connected": true,
-        "action": {
-            "type": "ClickKey",
-            "param": {
-                "key": 27
-            }
-        },
-        "post_delay": 1000,
-        "next": [
-            "BattleHostingMainLoop"
-        ]
+        "threshold": 0.9,
+        "method": 5,
+        "green_mask": true,
+        "action": "StopTask",
+        "pre_delay": 0,
+        "post_delay": 0
     },
     "BattleHostingSelectBall": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 49
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 49
+                }
             }
         },
         "post_delay": 1000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingSelectBallRepeat"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingSelectBallRepeat": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 49
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 49
+                }
             }
         },
         "post_delay": 1000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingConfirmCapture"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingConfirmCapture": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 32
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 32
+                }
             }
         },
         "post_delay": 1000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingConfirmCaptureRepeat"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingConfirmCaptureRepeat": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 32
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 32
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureControlVisible": {
         "recognition": "TemplateMatch",
@@ -165,7 +180,8 @@
         "next": [
             "BattleHostingCaptureControlRecheck",
             "BattleHostingCaptureStateLost"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureControlRecheck": {
         "recognition": "TemplateMatch",
@@ -183,10 +199,12 @@
         "post_delay": 0,
         "timeout": 0,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingCaptureBlockedColor",
             "BattleHostingCaptureBlockedTemplate",
             "BattleHostingCaptureKey"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureBlockedColor": {
         "recognition": "ColorMatch",
@@ -228,7 +246,8 @@
         "post_delay": 0,
         "next": [
             "BattleHostingSkillDecision"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureBlockedTemplate": {
         "recognition": "TemplateMatch",
@@ -245,33 +264,50 @@
         "post_delay": 0,
         "next": [
             "BattleHostingSkillDecision"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureKey": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 87
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 87
+                }
             }
         },
         "post_delay": 1000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingCaptureKeyRepeat"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureKeyRepeat": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 87
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 87
+                }
             }
         },
         "post_delay": 1000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingSelectBall"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingCaptureStateLost": {
         "recognition": "DirectHit",
@@ -279,7 +315,8 @@
         "post_delay": 250,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingExitCandidate": {
         "recognition": "Or",
@@ -294,7 +331,8 @@
         "next": [
             "BattleHostingExitConfirmed",
             "BattleHostingResume"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingExitConfirmed": {
         "recognition": "Or",
@@ -310,7 +348,8 @@
         "next": [
             "BattleHostingBattleReady",
             "BattleHostingCaptureControlVisible"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingResume": {
         "recognition": "DirectHit",
@@ -318,7 +357,8 @@
         "post_delay": 0,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingWaitForControls": {
         "recognition": "DirectHit",
@@ -326,19 +366,22 @@
         "post_delay": 250,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingSkillDecision": {
         "recognition": "DirectHit",
         "action": "DoNothing",
         "post_delay": 0,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingRecommendedSkill1",
             "BattleHostingRecommendedSkill2",
             "BattleHostingRecommendedSkill3",
             "BattleHostingRecommendedSkill4",
             "BattleHostingFallbackSkill"
-        ]
+        ],
+        "pre_delay": 0
     },
     "BattleHostingRecommendedSkill1": {
         "recognition": "TemplateMatch",
@@ -351,15 +394,22 @@
         ],
         "threshold": 0.82,
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 49
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 49
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingRecommendedSkill2": {
         "recognition": "TemplateMatch",
@@ -372,15 +422,22 @@
         ],
         "threshold": 0.82,
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 50
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 50
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingRecommendedSkill3": {
         "recognition": "TemplateMatch",
@@ -393,15 +450,22 @@
         ],
         "threshold": 0.82,
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 51
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 51
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingRecommendedSkill4": {
         "recognition": "TemplateMatch",
@@ -414,27 +478,47 @@
         ],
         "threshold": 0.82,
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 52
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 52
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
     },
     "BattleHostingFallbackSkill": {
         "recognition": "DirectHit",
         "action": {
-            "type": "ClickKey",
+            "type": "Custom",
             "param": {
-                "key": 49
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 49
+                }
             }
         },
         "post_delay": 1000,
         "next": [
             "BattleHostingMainLoop"
-        ]
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "pre_delay": 0
+    },
+    "BattleHostingStopInputFailure": {
+        "recognition": "DirectHit",
+        "action": "StopTask",
+        "pre_delay": 0,
+        "post_delay": 0
     }
 }

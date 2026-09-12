@@ -6,6 +6,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleResultVisible",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep1ChallengePrompt"
@@ -32,6 +33,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep2ChallengeButton"
         ]
     },
@@ -51,6 +53,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep3StartButton"
         ]
@@ -77,6 +80,7 @@
         },
         "post_delay": 500,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStopAfterCancel"
         ]
     },
@@ -100,6 +104,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound1Skill"
         ]
@@ -123,6 +128,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound2Skill"
         ]
@@ -134,6 +140,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound3Skill"
         ]
@@ -145,6 +152,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound4Skill"
         ]
@@ -156,6 +164,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound1Skill"
         ]
@@ -179,6 +188,7 @@
         },
         "post_delay": 1000,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleConfirmCapture"
         ]
     },
@@ -194,6 +204,7 @@
         "rate_limit": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattlePostCaptureClick1AltDown"
         ]
     },
@@ -236,6 +247,7 @@
         },
         "post_delay": 1000,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattlePostCaptureClick2AltDown"
         ]
     },
@@ -278,6 +290,7 @@
         },
         "post_delay": 0,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleResultVisible",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep1ChallengePrompt"
@@ -297,6 +310,7 @@
         "post_delay": 300,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleBlueStaminaEnough",
             "FlowerSeedBattlePurpleStaminaEnough",
             "FlowerSeedBattleExitResult"
@@ -315,6 +329,7 @@
         "action": "DoNothing",
         "post_delay": 0,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleChallengeAgain"
         ]
     },
@@ -331,6 +346,7 @@
         "action": "DoNothing",
         "post_delay": 0,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleChallengeAgain"
         ]
     },
@@ -348,6 +364,7 @@
         "post_delay": 1000,
         "timeout": -1,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStepEndPrompt",
             "FlowerSeedBattleStep6CaptureMenu",
             "FlowerSeedBattleRound1Skill"
@@ -366,7 +383,24 @@
         "action": "Click",
         "post_delay": 500,
         "next": [
+            "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStopAfterCancel"
         ]
+    },
+    "FlowerSeedBattleShinyMarker": {
+        "recognition": "TemplateMatch",
+        "template": "battle_shiny_marker.png",
+        "roi": [
+            640,
+            100,
+            0,
+            520
+        ],
+        "threshold": 0.9,
+        "method": 5,
+        "green_mask": true,
+        "action": "StopTask",
+        "pre_delay": 0,
+        "post_delay": 0
     }
 }
