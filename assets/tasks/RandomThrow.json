@@ -32,25 +32,13 @@
                     "default": "200",
                     "verify": "^(?:[1-9]\\d{0,4}|100000)$",
                     "pattern_msg": "$option.RandomThrowClickDuration.inputs.HoldMin.pattern_msg"
-                },
-                {
-                    "name": "HoldMax",
-                    "label": "$option.RandomThrowClickDuration.inputs.HoldMax.label",
-                    "description": "$option.RandomThrowClickDuration.inputs.HoldMax.description",
-                    "pipeline_type": "int",
-                    "default": "500",
-                    "verify": "^(?:[1-9]\\d{0,4}|100000)$",
-                    "pattern_msg": "$option.RandomThrowClickDuration.inputs.HoldMax.pattern_msg"
                 }
             ],
             "pipeline_override": {
                 "RandomThrowClick": {
                     "action": {
                         "param": {
-                            "duration_range": [
-                                "{HoldMin}",
-                                "{HoldMax}"
-                            ]
+                            "duration": "{HoldMin}"
                         }
                     }
                 }
@@ -69,27 +57,11 @@
                     "default": "200",
                     "verify": "^(?:0|[1-9]\\d{0,5})$",
                     "pattern_msg": "$option.RandomThrowDelayRange.inputs.DelayMin.pattern_msg"
-                },
-                {
-                    "name": "DelayMax",
-                    "label": "$option.RandomThrowDelayRange.inputs.DelayMax.label",
-                    "description": "$option.RandomThrowDelayRange.inputs.DelayMax.description",
-                    "pipeline_type": "int",
-                    "default": "500",
-                    "verify": "^(?:0|[1-9]\\d{0,5})$",
-                    "pattern_msg": "$option.RandomThrowDelayRange.inputs.DelayMax.pattern_msg"
                 }
             ],
             "pipeline_override": {
                 "RandomThrowDelay": {
-                    "action": {
-                        "param": {
-                            "duration_range": [
-                                "{DelayMin}",
-                                "{DelayMax}"
-                            ]
-                        }
-                    }
+                    "post_delay": "{DelayMin}"
                 }
             }
         }

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -67,6 +68,13 @@ def install_deps():
         print('Please download the MaaFramework to "deps" first.')
         print('请先下载 MaaFramework 到 "deps"。')
         sys.exit(1)
+
+    if os_name == "win" and arch == "x86_64":
+        lock = jsonc.loads((working_dir / "maaframework.lock.json").read_text(encoding="utf-8"))
+        for filename, expected in lock["files"].items():
+            path = working_dir / "deps" / "bin" / filename
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+                raise RuntimeError(f"Runtime hash mismatch: {path}; download {lock['release']['url']}")
 
     if os_name == "android":
         shutil.copytree(
@@ -176,6 +184,8 @@ def install_python_runtime():
     subprocess.run(
         [str(executable), "-I", "-c",
          "import cv2, numpy, interception, win32api; "
+         "from importlib.metadata import version; "
+         "assert version('MaaFw') == '5.13.0', 'Rebundle embedded Python for MaaFw 5.13.0'; "
          "from maa.agent.agent_server import AgentServer; "
          "import runpy; runpy.run_path('agent/main.py', run_name='maaroco_install_check'); "
          "print('Installed Python and Agent import check passed')"],
@@ -185,6 +195,7 @@ def install_python_runtime():
 
 
 def install_chores():
+    shutil.copy2(working_dir / "maaframework.lock.json", install_path)
     shutil.copy2(
         working_dir / "README.md",
         install_path,

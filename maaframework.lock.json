@@ -1,26 +1,20 @@
 {
-    "repository": "https://github.com/Tortes/MaaFramework",
-    "branch": "feat/interception-relative-move-v5.11",
-    "commit": "d6381bd76171647463d62358f6fed01f2a613d79",
-    "configuration": "RelWithDebInfo",
+    "repository": "https://github.com/MaaXYZ/MaaFramework",
+    "branch": "main",
+    "commit": "2bcfa85c66a2eac6ca3e5937f175495275ee0643",
     "release": {
-        "tag": "maaroco-d6381bd7",
-        "asset": "MAA-win-x86_64-d6381bd7.zip",
-        "url": "https://github.com/Tortes/MaaFramework/releases/download/maaroco-d6381bd7/MAA-win-x86_64-d6381bd7.zip"
+        "tag": "v5.13.0",
+        "asset": "MAA-win-x86_64-v5.13.0.zip",
+        "url": "https://github.com/MaaXYZ/MaaFramework/releases/download/v5.13.0/MAA-win-x86_64-v5.13.0.zip"
     },
-    "workflow_run": 31035772030,
     "artifact": {
-        "id": 8943030200,
-        "name": "MAA-win-x86_64",
-        "reported_size_bytes": 72858796,
-        "github_digest": "sha256:da9cc89888d64c791ee9dc973ae98b96c2a33c197789e6d296606dd966c966a7",
-        "api_zip_sha256": "da9cc89888d64c791ee9dc973ae98b96c2a33c197789e6d296606dd966c966a7"
+        "github_digest": "sha256:179b51b6211fc74317c8dc06f10fae4724aca370df7d1bf694cd00d06ff38efe"
     },
     "files": {
-        "MaaWin32ControlUnit.dll": "eb65f606ab6e89d9b245be6cecc34cf98d1cff2703ea52f0d732fb8c9ee27e13",
-        "MaaFramework.dll": "f99dd8083616b15093070ce2e2f63b39bfde5f18768eddb9c44ea0b57d66c546",
-        "MaaAgentClient.dll": "f2e7acbe1a517bd72696d3a205357c70ee7d4c4ec381aef4a6aee3271af98db3",
-        "MaaAgentServer.dll": "f1ba042dcefdf9bc5212a9661faaa05a5c81d3d14d30cbdf9c473b91d874211f",
-        "MaaUtils.dll": "f5b8ef1feb4512f0cab1cd24c700d38b7543917e4cdba0440c92913183b55b75"
+        "MaaWin32ControlUnit.dll": "2a558467cb39b1ae10417449dffe2a039092555ff47a33f17672050ecd7bc2da",
+        "MaaFramework.dll": "d4503d525561a7be46d7b2a5e64f3288f5b3ba7aaefaf36ab44f7ce4c04cffae",
+        "MaaAgentClient.dll": "785564d809e93247a49e444695541ea1e09e3b635346c9b9176d15be0c920766",
+        "MaaAgentServer.dll": "6eaf82fcce4d23e048cd94372615cf02a3fc0739c0db80653467b3036effdc1a",
+        "MaaUtils.dll": "f52c67116dbfb3449b1b2889e47ad19636faa0aaf29389464e0b4df1189731e5"
     }
 }

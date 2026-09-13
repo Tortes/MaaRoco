@@ -24,6 +24,18 @@ def _relative_mouse():
     return _interception
 
 
+def _relative_move(dx: int, dy: int) -> bool:
+    # Official MaaFW Interception does not implement RelativeMoveInput.
+    from interception.strokes import MouseStroke
+
+    driver = _relative_mouse()
+    driver.auto_capture_devices(keyboard=False, mouse=True)
+    device_context = driver.inputs._g_context
+    if not device_context.devices[device_context.mouse].get_HWID():
+        return False
+    return device_context.send(device_context.mouse, MouseStroke(0, 0, 0, dx, dy)).succeeded
+
+
 @dataclass(frozen=True)
 class AimSettings:
     target_recognition: str = "PipaBirdDetect"
@@ -311,6 +323,10 @@ def _select_locked_candidate(
 
 
 def _wait_controller_action(job, operation: str) -> None:
+    if isinstance(job, bool):
+        if not job:
+            raise RuntimeError(f"Interception {operation} failed")
+        return
     job.wait()
     if hasattr(job, "succeeded") and not job.succeeded:
         raise RuntimeError(f"Maa controller {operation} failed")
@@ -796,7 +812,7 @@ class TargetPetExplore(CustomAction):
                     follow_move = _lost_target_follow_move(self.last_move)
                     if follow_move != (0, 0):
                         _wait_controller_action(
-                            controller.post_relative_move(*follow_move),
+                            _relative_move(*follow_move),
                             "lost target follow movement",
                         )
                         self.last_move = follow_move
@@ -830,7 +846,7 @@ class TargetPetExplore(CustomAction):
                     )
                     self.last_move = (0, recovery_y)
                     _wait_controller_action(
-                        controller.post_relative_move(*self.last_move),
+                        _relative_move(*self.last_move),
                         "pitch recovery movement",
                     )
                     self.pitch_offset_y = _updated_pitch_offset(
@@ -855,7 +871,7 @@ class TargetPetExplore(CustomAction):
                 scan_x = self.search_direction_x * scan_step_units
                 self.last_move = (scan_x, 0)
                 _wait_controller_action(
-                    controller.post_relative_move(*self.last_move),
+                    _relative_move(*self.last_move),
                     "scan movement",
                 )
                 _log(
@@ -897,7 +913,7 @@ class TargetPetExplore(CustomAction):
                     follow_move = _lost_target_follow_move(self.last_move)
                     if follow_move != (0, 0):
                         _wait_controller_action(
-                            controller.post_relative_move(*follow_move),
+                            _relative_move(*follow_move),
                             "lost locked target follow movement",
                         )
                         self.last_move = follow_move
@@ -1009,7 +1025,7 @@ class TargetPetExplore(CustomAction):
                 relative_aim_vertical_gain_percent,
             )
             _wait_controller_action(
-                controller.post_relative_move(move_x, move_y),
+                _relative_move(move_x, move_y),
                 "aim movement",
             )
             self.last_move = (move_x, move_y)

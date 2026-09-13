@@ -1,0 +1,69 @@
+{
+    "task": [
+        {
+            "name": "RandomThrowCombo",
+            "label": "$task.RandomThrowCombo.label",
+            "entry": "RandomThrowComboStart",
+            "default_check": false,
+            "description": "$task.RandomThrowCombo.description",
+            "option": [
+                "RandomThrowComboClickDuration",
+                "RandomThrowComboDelayRange"
+            ],
+            "controller": [
+                "Win32-Interception"
+            ],
+            "group": [
+                "assist"
+            ]
+        }
+    ],
+    "option": {
+        "RandomThrowComboClickDuration": {
+            "type": "input",
+            "label": "$option.RandomThrowComboClickDuration.label",
+            "description": "$option.RandomThrowComboClickDuration.description",
+            "inputs": [
+                {
+                    "name": "HoldMin",
+                    "label": "$option.RandomThrowComboClickDuration.inputs.HoldMin.label",
+                    "description": "$option.RandomThrowComboClickDuration.inputs.HoldMin.description",
+                    "pipeline_type": "int",
+                    "default": "200",
+                    "verify": "^(?:[1-9]\\d{0,4}|100000)$",
+                    "pattern_msg": "$option.RandomThrowComboClickDuration.inputs.HoldMin.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "RandomThrowComboClick": {
+                    "action": {
+                        "param": {
+                            "duration": "{HoldMin}"
+                        }
+                    }
+                }
+            }
+        },
+        "RandomThrowComboDelayRange": {
+            "type": "input",
+            "label": "$option.RandomThrowComboDelayRange.label",
+            "description": "$option.RandomThrowComboDelayRange.description",
+            "inputs": [
+                {
+                    "name": "DelayMin",
+                    "label": "$option.RandomThrowComboDelayRange.inputs.DelayMin.label",
+                    "description": "$option.RandomThrowComboDelayRange.inputs.DelayMin.description",
+                    "pipeline_type": "int",
+                    "default": "200",
+                    "verify": "^(?:0|[1-9]\\d{0,5})$",
+                    "pattern_msg": "$option.RandomThrowComboDelayRange.inputs.DelayMin.pattern_msg"
+                }
+            ],
+            "pipeline_override": {
+                "RandomThrowComboDelay": {
+                    "post_delay": "{DelayMin}"
+                }
+            }
+        }
+    }
+}

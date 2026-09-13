@@ -15,7 +15,7 @@
 
 ## 即刻开始
 
-参考[MaaFw手册](https://github.com/MaaXYZ/MaaPracticeBoilerplate/blob/main/docs/zh_cn/develop/how_to_develop.md), 使用定制化的[MaaFramework Release](https://github.com/Tortes/MaaFramework/releases)替换原有`deps`目录框架动态库，以支持[Interception](https://github.com/oblitum/Interception)能力；需要提前下载Interception驱动，参考[Interception官方github页面](https://github.com/oblitum/Interception)；
+使用官方 [MaaFramework v5.13.0](https://github.com/MaaXYZ/MaaFramework/releases/tag/v5.13.0) 的完整 Windows x86-64 运行库，版本及校验值记录在 `maaframework.lock.json`。需要提前安装 [Interception 驱动](https://github.com/oblitum/Interception)。瞄准所需的相对鼠标移动通过内置 Python Interception 执行；连续丢球使用固定按住时长和固定间隔。
 
 前端默认关闭实时画面，空闲时不会持续截图；任务运行期间由任务流水线按需截图。按 `F11` 可启动或停止当前任务。
 

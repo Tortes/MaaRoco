@@ -1,6 +1,6 @@
 # Python dependencies imported by the packaged MaaRoco agent.
 # Keep every transitive dependency pinned so release artifacts are reproducible.
-MaaFw==5.12.3
+MaaFw==5.13.0
 MaaAgentBinary==1.0.1
 StrEnum==0.4.15
 numpy==2.2.6

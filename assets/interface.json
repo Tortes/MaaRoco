@@ -70,6 +70,7 @@
         "tasks/BattleHosting.json",
         "tasks/FlowerSeedBattle.json",
         "tasks/RandomThrow.json",
+        "tasks/RandomThrowCombo.json",
         "tasks/TargetPetThrow.json"
     ]
 }

@@ -1,5 +1,5 @@
 {
-    "RandomThrowStart": {
+    "RandomThrowComboStart": {
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": {
@@ -10,10 +10,10 @@
         },
         "post_delay": 100,
         "next": [
-            "RandomThrowClick"
+            "RandomThrowComboClick"
         ]
     },
-    "RandomThrowClick": {
+    "RandomThrowComboClick": {
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": {
@@ -30,26 +30,54 @@
         },
         "post_delay": 0,
         "next": [
-            "RandomThrowDelay"
+            "RandomThrowComboX"
         ]
     },
-    "RandomThrowDelay": {
+    "RandomThrowComboDelay": {
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": "DoNothing",
         "post_delay": 200,
         "on_error": [
-            "RandomThrowStop"
+            "RandomThrowComboStop"
         ],
         "next": [
-            "RandomThrowClick"
+            "RandomThrowComboClick"
         ]
     },
-    "RandomThrowStop": {
+    "RandomThrowComboStop": {
         "recognition": "DirectHit",
         "pre_delay": 0,
         "action": "StopTask",
         "post_delay": 0,
         "next": []
+    },
+    "RandomThrowComboX": {
+        "recognition": "DirectHit",
+        "pre_delay": 0,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 88
+            }
+        },
+        "post_delay": 100,
+        "next": [
+            "RandomThrowComboSpace"
+        ]
+    },
+    "RandomThrowComboSpace": {
+        "recognition": "DirectHit",
+        "pre_delay": 0,
+        "action": {
+            "type": "ClickKey",
+            "param": {
+                "key": 32
+            }
+        },
+        "post_delay": 100,
+        "next": [
+            "RandomThrowComboDelay"
+        ]
     }
 }

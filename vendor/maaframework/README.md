@@ -1,13 +1,15 @@
-# Pinned MaaFramework Runtime
+# Official MaaFramework Runtime
 
-The complete Windows x86-64 runtime is published from
-`Tortes/MaaFramework@d6381bd76171647463d62358f6fed01f2a613d79` as release
-`maaroco-d6381bd7`. The commit is based on MaaFramework v5.11.0 and adds
-`RandomDelay`, configurable click duration, Interception keyboard input, and
-Interception `RelativeMoveInput` support.
+MaaRoco uses the complete official `MaaXYZ/MaaFramework` v5.13.0 Windows
+x86-64 release. `maaframework.lock.json` records its source commit, archive
+digest and DLL hashes. CI verifies these before packaging. Do not overlay
+individual DLLs from the previous custom runtime.
 
-The archive and key DLL SHA-256 values are recorded in
-`maaframework.lock.json`. The release workflow verifies all of them before
-packaging so an official MaaFramework core cannot be mixed with the custom
-control unit. `win-x86_64/MaaWin32ControlUnit.dll` is retained only as a local
-reference copy; release packaging uses the complete pinned runtime archive.
+Throw tasks use official `LongPress` and `DoNothing` with fixed delays.
+Interception relative mouse movement uses the bundled Python driver binding,
+because the official Interception backend does not implement RelativeMoveInput.
+
+The Interception keyboard selection fix is maintained separately on official
+main in `MaaFramework`, branch `fix/official-interception-device-selection`.
+It is not part of the official v5.13.0 binaries. The battle keyboard workaround
+remains until an official release includes the framework fix.
