@@ -90,7 +90,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingSelectBallRepeat"
@@ -111,7 +111,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingConfirmCapture"
@@ -132,7 +132,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingConfirmCaptureRepeat"
@@ -153,7 +153,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingMainLoop"
         ],
@@ -278,7 +278,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingCaptureKeyRepeat"
@@ -299,7 +299,7 @@
                 }
             }
         },
-        "post_delay": 1000,
+        "post_delay": 100,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingSelectBall"
