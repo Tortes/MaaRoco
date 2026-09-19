@@ -10,7 +10,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 namespace roco
 {
@@ -51,11 +53,13 @@ inline json::value box_json(const Box &b)
 json::value params(const char *raw);
 int integer(const json::value &p, const std::string &key, int fallback, int lo, int hi);
 double number(const json::value &p, const std::string &key, double fallback, double lo, double hi);
+void log(const std::string &scope, const std::string &text);
+bool relative_move(MaaController *controller, int dx, int dy);
+bool battle_key(MaaController *controller, int key);
+#ifdef _WIN32
 std::string utf8(const std::wstring &s);
 std::wstring wide(const std::string &s);
-void log(const std::string &scope, const std::string &text);
 bool focus(HWND hwnd, int timeout_ms = 5000);
-bool relative_move(int dx, int dy);
 bool driver_key(int vk);
 std::filesystem::path executable_path();
 struct Window
@@ -67,6 +71,7 @@ struct Window
 std::vector<Window> windows();
 std::optional<Window> select_window(const std::vector<Window> &all, const std::string &title, const std::string &cls,
                                     const std::string &process);
+#endif
 Point tolerance(const Box &b);
 Point aim_move(int ex, int ey, int step, int gain, int vertical);
 Point follow_move(Point move);

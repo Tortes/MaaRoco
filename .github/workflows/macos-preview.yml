@@ -1,0 +1,105 @@
+name: macOS preview
+
+on:
+  push:
+    branches: [feat/macos-preview]
+    tags: ["v*-macos.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            asset_arch: aarch64
+          - runner: macos-15-intel
+            arch: x64
+            asset_arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve preview version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            echo "VERSION=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=v0.2.16-macos.dev" >> "$GITHUB_ENV"
+          fi
+      - name: Download pinned dependencies
+        run: python tools/fetch_macos_dependencies.py --arch ${{ matrix.arch }} --directory build/macos-deps
+      - name: Prepare macOS app and map pipeline keys
+        run: >-
+          python tools/prepare_macos.py --sdk build/macos-deps/framework
+          --gui build/macos-deps/gui --output build/macos-package
+          --arch ${{ matrix.arch }} --version "$VERSION"
+      - name: Compile and test native Agent
+        shell: bash
+        run: |
+          cmake -S agent -B build/macos-agent \
+            -DMAA_SDK="$PWD/build/macos-deps/framework" \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+          cmake --build build/macos-agent --parallel 3
+          ctest --test-dir build/macos-agent --output-on-failure
+          cmake --install build/macos-agent --prefix "$PWD/build/macos-package/MaaRoco.app/Contents/MacOS"
+          build/macos-package/MaaRoco.app/Contents/MacOS/runtimes/osx-${{ matrix.arch }}/native/MaaRocoAgent --check
+      - name: Validate package and run synthetic IPC tests
+        shell: bash
+        run: |
+          python -m pip install MaaFw==5.13.0 numpy==2.2.6 opencv-python-headless==4.12.0.88 json-with-comments jsonschema==4.26.0 referencing==0.37.0
+          python -m unittest discover -s tools -p 'test_*.py'
+          python tools/validate_schema.py --schema-dir deps/tools \
+            --resource-dirs build/macos-package/MaaRoco.app/Contents/MacOS/resource/pipeline \
+            --task-dirs build/macos-package/MaaRoco.app/Contents/MacOS/tasks \
+            --interface-files build/macos-package/MaaRoco.app/Contents/MacOS/interface.json
+          python tools/validate_macos_package.py build/macos-package --arch ${{ matrix.arch }}
+          python tools/test_native_agent_integration.py --install-root build/macos-package/MaaRoco.app/Contents/MacOS
+      - name: Sign and verify preview app
+        run: |
+          python tools/sign_macos.py build/macos-package/MaaRoco.app
+          python tools/validate_macos_package.py build/macos-package --arch ${{ matrix.arch }}
+      - name: Create distribution archive
+        shell: bash
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent build/macos-package/MaaRoco.app "dist/MaaRoco-macos-${{ matrix.asset_arch }}-$VERSION.zip"
+          cp docs/macos-preview.md dist/README-macOS.md
+          cd dist
+          shasum -a 256 *.zip > "SHA256SUMS-${{ matrix.asset_arch }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MaaRoco-macos-${{ matrix.asset_arch }}
+          path: dist/*
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: MaaRoco-macos-*
+          path: dist
+          merge-multiple: true
+      - name: Publish macOS prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --title "MaaRoco $GITHUB_REF_NAME — macOS Preview"
+          --notes-file docs/macos-preview.md --prerelease --latest=false --verify-tag

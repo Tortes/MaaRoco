@@ -112,10 +112,10 @@ void control(MaaController *c, MaaCtrlId id)
     if (MaaControllerWait(c, id) != MaaStatus_Succeeded)
         throw std::runtime_error("Controller input failed");
 }
-void move(Point p)
+void move(MaaController *controller, Point p)
 {
-    if (!relative_move(p.x, p.y))
-        throw std::runtime_error("Interception relative move failed");
+    if (!relative_move(controller, p.x, p.y))
+        throw std::runtime_error("Relative mouse movement failed; check focus and input permissions");
 }
 bool stopping(MaaContext *c)
 {
@@ -226,7 +226,7 @@ bool explore(MaaContext *ctx, MaaTaskId id, const json::value &p, bool snow)
             auto f = follow_move(st.last);
             if (f != Point{})
             {
-                move(f);
+                move(c, f);
                 st.last = f;
                 st.pitch = clamp(st.pitch + f.y, pitch_limit);
             }
@@ -260,7 +260,7 @@ bool explore(MaaContext *ctx, MaaTaskId id, const json::value &p, bool snow)
             {
                 int y = -clamp(st.pitch, recovery_step);
                 st.last = {0, y};
-                move(st.last);
+                move(c, st.last);
                 st.pitch = clamp(st.pitch + y, pitch_limit);
                 st.recovering = st.pitch != 0;
                 if (!st.recovering)
@@ -270,7 +270,7 @@ bool explore(MaaContext *ctx, MaaTaskId id, const json::value &p, bool snow)
             {
                 ++st.scans;
                 st.last = {st.direction * scan, 0};
-                move(st.last);
+                move(c, st.last);
             }
             return finish();
         }
@@ -326,7 +326,7 @@ bool explore(MaaContext *ctx, MaaTaskId id, const json::value &p, bool snow)
                        ? fast
                        : (std::max(std::abs(ex), std::abs(ey)) <= fine_radius ? fine : slow);
         st.last = aim_move(ex, ey, step, s.gain, vertical);
-        move(st.last);
+        move(c, st.last);
         st.pitch = clamp(st.pitch + st.last.y, pitch_limit);
         if (st.last.x)
             st.direction = st.last.x > 0 ? 1 : -1;

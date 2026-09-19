@@ -1,0 +1,24 @@
+{
+  "maafw_version": "v5.13.0",
+  "mfa_version": "v2.16.1",
+  "arm64": {
+    "framework": {
+      "url": "https://github.com/MaaXYZ/MaaFramework/releases/download/v5.13.0/MAA-macos-aarch64-v5.13.0.zip",
+      "sha256": "9bc142b7c16c05342c9007ffc507743b66e2773c2995d6ace1946534bc890f39"
+    },
+    "gui": {
+      "url": "https://github.com/MaaXYZ/MFAAvalonia/releases/download/v2.16.1/MFAAvalonia-v2.16.1-osx-arm64.tar.gz",
+      "sha256": "42dec965d7718a01e7301b2e0862e6584f9ee5e352001bd3fb591f1e5c5ff600"
+    }
+  },
+  "x64": {
+    "framework": {
+      "url": "https://github.com/MaaXYZ/MaaFramework/releases/download/v5.13.0/MAA-macos-x86_64-v5.13.0.zip",
+      "sha256": "8b70874923adf4376e02003ae1a2d4a2f4ebce42b07ae4c329845f9e09777f53"
+    },
+    "gui": {
+      "url": "https://github.com/MaaXYZ/MFAAvalonia/releases/download/v2.16.1/MFAAvalonia-v2.16.1-osx-x64.tar.gz",
+      "sha256": "8a839ec52735a5305d35e466000abee122ef96ef9e1ed778c6475f9699bb0edf"
+    }
+  }
+}

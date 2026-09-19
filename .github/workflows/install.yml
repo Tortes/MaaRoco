@@ -35,6 +35,7 @@ on:
 
 jobs:
   meta:
+    if: ${{ !contains(github.ref_name, '-macos.') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

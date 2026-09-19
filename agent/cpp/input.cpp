@@ -65,7 +65,7 @@ struct Device
 };
 std::mutex input_mutex;
 } // namespace
-bool relative_move(int dx, int dy)
+bool relative_move(MaaController *, int dx, int dy)
 {
     std::lock_guard lock(input_mutex);
     Device mouse;
@@ -94,5 +94,14 @@ bool driver_key(int vk)
     // Always attempt key-up on the same physical device, even after a failed write.
     bool up = keyboard.send(stroke);
     return down && up;
+}
+bool battle_key(MaaController *controller, int key)
+{
+    auto buf = MaaStringBufferCreate();
+    bool ok = MaaControllerGetInfo(controller, buf);
+    auto info = params(MaaStringBufferGet(buf));
+    MaaStringBufferDestroy(buf);
+    auto hwnd = reinterpret_cast<HWND>(static_cast<uintptr_t>(number(info, "hwnd", 0, 0, 9007199254740991.0)));
+    return ok && focus(hwnd, 300) && driver_key(key);
 }
 } // namespace roco

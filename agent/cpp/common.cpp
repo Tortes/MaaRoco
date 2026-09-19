@@ -4,6 +4,8 @@
 #include <limits>
 #include <mutex>
 #include <set>
+#include <ctime>
+#include <iomanip>
 
 namespace roco
 {
@@ -33,6 +35,7 @@ int integer(const json::value &p, const std::string &key, int fallback, int lo, 
 {
     return static_cast<int>(number(p, key, fallback, lo, hi));
 }
+#ifdef _WIN32
 std::string utf8(const std::wstring &s)
 {
     if (s.empty())
@@ -53,6 +56,7 @@ std::wstring wide(const std::string &s)
     MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
     return out;
 }
+#endif
 void log(const std::string &scope, const std::string &text)
 {
     static std::mutex mutex;
@@ -62,15 +66,21 @@ void log(const std::string &scope, const std::string &text)
     {
         std::filesystem::create_directories("debug");
         std::ofstream f(scope.starts_with("Launch") ? "debug/launch_game.log" : "debug/target_pet.log", std::ios::app);
-        SYSTEMTIME t{};
-        GetLocalTime(&t);
-        f << t.wYear << '-' << t.wMonth << '-' << t.wDay << ' ' << t.wHour << ':' << t.wMinute << ':' << t.wSecond
+        const auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        std::tm t{};
+#ifdef _WIN32
+        localtime_s(&t, &now);
+#else
+        localtime_r(&now, &t);
+#endif
+        f << std::put_time(&t, "%Y-%m-%d %H:%M:%S")
           << " [" << scope << "] " << text << '\n';
     }
     catch (...)
     {
     }
 }
+#ifdef _WIN32
 std::filesystem::path executable_path()
 {
     std::wstring path(32768, 0);
@@ -159,6 +169,7 @@ std::optional<Window> select_window(const std::vector<Window> &all, const std::s
                 found = w;
     return found;
 }
+#endif
 Point tolerance(const Box &b)
 {
     return {std::max(8, rounded(b.width * .4)), std::max(6, rounded(b.height * .4))};

@@ -8,6 +8,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import sys
+import platform
 
 
 def main():
@@ -15,9 +17,13 @@ def main():
     parser.add_argument("--install-root", type=Path, required=True)
     args = parser.parse_args()
     root = args.install_root.resolve()
-    binary = root / "runtimes/win-x64/native"
+    windows = sys.platform == "win32"
+    rid = "win-x64" if windows else ("osx-arm64" if platform.machine() == "arm64" else "osx-x64")
+    binary = root / f"runtimes/{rid}/native"
+    executable = "MaaRocoAgent.exe" if windows else "MaaRocoAgent"
+    creationflags = subprocess.CREATE_NO_WINDOW if windows else 0
     os.environ["MAAFW_BINARY_PATH"] = str(binary)
-    dll_directory = os.add_dll_directory(str(binary))
+    dll_directory = os.add_dll_directory(str(binary)) if windows else None
     from maa.agent_client import AgentClient
     from maa.controller import CustomController
     from maa.resource import Resource
@@ -67,9 +73,9 @@ def main():
         output = Path(directory) / "agent.log"
         with output.open("w", encoding="utf-8") as log:
             process = subprocess.Popen(
-                [str(binary / "MaaRocoAgent.exe"), client.identifier],
+                [str(binary / executable), client.identifier],
                 cwd=directory, stdout=log, stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=creationflags,
             )
             try:
                 assert client.connect(), "Native Agent IPC connection failed"
@@ -155,10 +161,11 @@ def main():
                 deadline = time.monotonic() + 5
                 while not stop.done and time.monotonic() < deadline: time.sleep(.02)
                 assert stop.done, "Native launch action did not respond to stop"
-                # Invalid HWND fails before any desktop input is attempted.
-                result = subprocess.run([str(binary / "MaaRocoRunner.exe"), "--hwnd", "0"],
-                                        cwd=directory, timeout=5, creationflags=subprocess.CREATE_NO_WINDOW)
-                assert result.returncode == 2
+                if windows:
+                    # Invalid HWND fails before any desktop input is attempted.
+                    result = subprocess.run([str(binary / "MaaRocoRunner.exe"), "--hwnd", "0"],
+                                            cwd=directory, timeout=5, creationflags=creationflags)
+                    assert result.returncode == 2
                 print("Native IPC, blue recognition, snow/target throwing, launch timeout and stop checks passed")
             except Exception:
                 log.flush()

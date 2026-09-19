@@ -36,6 +36,7 @@ int main()
         auto p = params("{\"timeout_ms\":\"120\"}");
         check(integer(p, "timeout_ms", 5, 1, 1000) == 120, "string numeric option");
         check(integer(params("invalid"), "n", 50, 1, 100) == 50, "malformed JSON defaults");
+#ifdef _WIN32
         std::vector<Window> all{{reinterpret_cast<HWND>(1), "Game", "UnrealWindow", "game.exe", 100},
                                 {reinterpret_cast<HWND>(2), "Game", "UnrealWindow", "game.exe", 1000}};
         check(select_window(all, "Game", "UnrealWindow", "wrong.exe")->hwnd == reinterpret_cast<HWND>(2),
@@ -43,6 +44,7 @@ int main()
         check(select_window(all, "Missing", "Missing", "GAME.EXE")->hwnd == reinterpret_cast<HWND>(2),
               "case-insensitive process fallback");
         check(!select_window(all, "Missing", "Missing", "none.exe"), "no unrelated window selected");
+#endif
         std::cout << "Native strategy and window selection tests passed\n";
         return 0;
     }

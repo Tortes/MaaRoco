@@ -20,15 +20,7 @@ MaaBool MAA_CALL action(MaaContext *ctx, MaaTaskId task_id, const char *, const 
         if (op == "battle_focused_key")
         {
             auto controller = MaaTaskerGetController(MaaContextGetTasker(ctx));
-            auto buf = MaaStringBufferCreate();
-            bool ok = MaaControllerGetInfo(controller, buf);
-            auto info = roco::params(MaaStringBufferGet(buf));
-            MaaStringBufferDestroy(buf);
-            auto hwnd =
-                reinterpret_cast<HWND>(static_cast<uintptr_t>(roco::number(info, "hwnd", 0, 0, 9007199254740991.0)));
-            if (!ok || !roco::focus(hwnd, 300))
-                return false;
-            return roco::driver_key(roco::integer(p, "key", 0, 0, 255));
+            return roco::battle_key(controller, roco::integer(p, "key", 0, 0, 255));
         }
     }
     catch (const std::exception &e)
