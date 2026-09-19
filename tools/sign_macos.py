@@ -12,12 +12,16 @@ magic = {b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe", b"\xbe\x
 for path in sorted(app.rglob("*")):
     if not path.is_file() or path.is_symlink():
         continue
+    # Sign the main executable together with its bundle, after all nested code.
+    if path == app / "Contents/MacOS/MaaRocoLauncher":
+        path.chmod(0o755)
+        continue
     with path.open("rb") as f:
         if f.read(4) not in magic:
             continue
     path.chmod(0o755)
     subprocess.run(["codesign", "--force", "--sign", "-", str(path)], check=True)
-runtime = app / "Contents/MacOS"
+runtime = app / "Contents/Resources"
 manifest_path = runtime / "macos-runtime-manifest.json"
 manifest = json.loads(manifest_path.read_text())
 manifest["unsigned_files"] = manifest["files"].copy()

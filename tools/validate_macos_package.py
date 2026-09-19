@@ -10,7 +10,7 @@ from validate_native_package import validate_resources
 
 def validate(root, arch, resources_only=False):
     app = root / "MaaRoco.app"
-    runtime = app / "Contents/MacOS"
+    runtime = app / "Contents/Resources"
     errors = validate_resources(runtime)
     interface = json.loads((runtime / "interface.json").read_text(encoding="utf-8"))
     native = runtime / f"runtimes/osx-{arch}/native"
@@ -29,12 +29,13 @@ def validate(root, arch, resources_only=False):
         if (runtime / relative).exists():
             errors.append(f"Windows/legacy runtime present: {relative}")
     plist = plistlib.loads((app / "Contents/Info.plist").read_bytes())
-    if not (runtime / plist["CFBundleExecutable"]).is_file():
+    if not resources_only and not (app / "Contents/MacOS" / plist["CFBundleExecutable"]).is_file():
         errors.append("Missing app executable")
     binaries = [native / "libMaaFramework.dylib", native / "libMaaAgentServer.dylib",
                 native / "libMaaMacOSControlUnit.dylib"]
     if not resources_only:
         binaries.append(native / "MaaRocoAgent")
+        binaries.append(app / "Contents/MacOS" / plist["CFBundleExecutable"])
     expected_cpu = 0x0100000C if arch == "arm64" else 0x01000007
     for binary in binaries:
         if not binary.is_file():

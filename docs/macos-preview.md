@@ -5,11 +5,11 @@ M 系列芯片下载 `macos-aarch64`，Intel 芯片下载 `macos-x86_64`。
 
 ## 启动与授权
 
-1. 解压整个发布包，将 `MaaRoco.app` 放到你有写入权限的固定目录。
-2. 双击 `MaaRoco.app`。包内已有 .NET 和 C++ Agent，不需要安装 Python、Interception 或额外的 .NET。
+1. 安装与你的 Mac 芯片对应的 [.NET 10 Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)（不需要 SDK）。然后解压发布包，将 `MaaRoco.app` 放到你有写入权限的固定目录。
+2. 双击 `MaaRoco.app`。包内已有 C++ Agent，不需要安装 Python 或 Interception；前端沿用 MFAAvalonia 的 .NET 10 依赖。
 3. 本预览版使用 ad-hoc 签名，未经 Apple 公证。如果 Gatekeeper 阻止运行，在“系统设置 → 隐私与安全性”中允许打开。若仍提示损坏，可在终端输入 `xattr -dr com.apple.quarantine `（末尾空格），将**本包的 MaaRoco.app** 拖进去后回车，再重新打开。
 4. 在“系统设置 → 隐私与安全性”中，为 MaaRoco 授予“屏幕录制”（新系统可能叫“屏幕与系统音频录制”）和“辅助功能”权限，然后完全退出并重新启动。
-5. 如果日志提示 Agent 缺少辅助功能权限，使用 Finder 的“显示包内容”找到 `Contents/MacOS/runtimes/osx-arm64/native/MaaRocoAgent`（Intel 为 `osx-x64`），将其加入辅助功能列表。
+5. 如果日志提示 Agent 缺少辅助功能权限，使用 Finder 的“显示包内容”找到 `Contents/Resources/runtimes/osx-arm64/native/MaaRocoAgent`（Intel 为 `osx-x64`），将其加入辅助功能列表。
 6. 手动启动游戏，在 MaaRoco 选择“macOS 游戏窗口（实验性）”，刷新窗口列表并选中游戏。先确认截图正常，再运行任务。
 
 ## 建议试用顺序
@@ -31,7 +31,7 @@ M 系列芯片下载 `macos-aarch64`，Intel 芯片下载 `macos-x86_64`。
 ## 反馈
 
 请提供 Mac 芯片、macOS 版本、游戏运行方式（原生/PlayCover/CrossOver 等）、失败任务，以及
-`MaaRoco.app/Contents/MacOS/debug` 和 `logs` 下对应日志。尤其说明截图是否正常、按键是否生效、视角是否跟随瞄准移动。
+`MaaRoco.app/Contents/Resources/debug` 和 `logs` 下对应日志。尤其说明截图是否正常、按键是否生效、视角是否跟随瞄准移动。
 
 ## 构建依据
 

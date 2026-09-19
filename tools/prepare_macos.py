@@ -54,7 +54,8 @@ def prepare(output, sdk, gui, arch, version):
     if not (gui / "MFAAvalonia").is_file() or not (sdk / "bin/libMaaAgentServer.dylib").is_file():
         raise ValueError("Expected extracted macOS MFAAvalonia and MaaFramework SDK")
     app = output / "MaaRoco.app"
-    runtime = app / "Contents/MacOS"
+    runtime = app / "Contents/Resources"
+    (app / "Contents/MacOS").mkdir(parents=True)
     shutil.copytree(gui, runtime, ignore=shutil.ignore_patterns("runtimes", "plugins", "config", "debug", "logs"))
     native = runtime / f"runtimes/osx-{arch}/native"
     shutil.copytree(sdk / "bin", native, ignore=shutil.ignore_patterns("*.node", "*MaaPiCli*", "plugins"))
@@ -107,7 +108,7 @@ def prepare(output, sdk, gui, arch, version):
     with (app / "Contents/Info.plist").open("wb") as f:
         plistlib.dump({
             "CFBundleName": "MaaRoco", "CFBundleDisplayName": "MaaRoco macOS Preview",
-            "CFBundleIdentifier": "io.github.tortes.maaroco", "CFBundleExecutable": "MFAAvalonia",
+            "CFBundleIdentifier": "io.github.tortes.maaroco", "CFBundleExecutable": "MaaRocoLauncher",
             "CFBundlePackageType": "APPL", "CFBundleShortVersionString": version.lstrip("v").split("-")[0],
             "CFBundleVersion": "1", "LSMinimumSystemVersion": "14.0", "NSHighResolutionCapable": True,
             "NSScreenCaptureUsageDescription": "MaaRoco needs screenshots to recognize the selected game window.",
