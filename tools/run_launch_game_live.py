@@ -1,8 +1,8 @@
 """Run the installed LaunchGame chain as an elevated, headless live test.
 
 The script writes incremental evidence to ``install/debug/launch_game_live_status.json``.
-It reports success only after the real Unreal window exists and the downstream
-``LaunchGameEnterWorldStart`` runner has remained active for a continuity check.
+It reports success only after the real Unreal window exists, Enter World has
+completed, and the launch task exits successfully without another pipeline.
 """
 
 from __future__ import annotations
@@ -70,7 +70,6 @@ def main() -> int:
         default=Path(r"D:\Program Files\LOL\WeGame\wegame.exe"),
     )
     parser.add_argument("--timeout", type=float, default=240.0)
-    parser.add_argument("--continuity-seconds", type=float, default=5.0)
     parser.add_argument(
         "--downstream-entry",
         default="LaunchGameEnterWorldStart",
@@ -154,7 +153,8 @@ def main() -> int:
         }
         job = tasker.post_task("LaunchGameStart", override)
         deadline = time.monotonic() + args.timeout
-        downstream_since: float | None = None
+        downstream_started = False
+        downstream_completed = False
         last_status_write = 0.0
 
         while time.monotonic() < deadline:
@@ -174,29 +174,29 @@ def main() -> int:
                     status["stage"] = "game_found"
                 elif f"starting entry={args.downstream_entry!r}" in line:
                     status["stage"] = "game_pipeline_running"
-                    downstream_since = downstream_since or time.monotonic()
+                    downstream_started = True
+                elif (
+                    f"downstream pipeline completed entry={args.downstream_entry!r}"
+                    in line
+                ):
+                    status["stage"] = "game_entry_completed"
+                    downstream_completed = True
 
             status["game_window_present"] = window_exists("UnrealWindow")
             status["task_running"] = not job.done
-            if (
-                downstream_since is not None
-                and status["game_window_present"]
-                and not job.done
-                and time.monotonic() - downstream_since >= args.continuity_seconds
-            ):
-                status.update(
-                    stage="verified",
-                    success=True,
-                    continuity_seconds=args.continuity_seconds,
-                )
-                write_status(status)
-                stop_tasker(tasker, timeout=10.0)
-                return 0
-
             if job.done:
+                if (
+                    job.succeeded
+                    and downstream_started
+                    and downstream_completed
+                    and status["game_window_present"]
+                ):
+                    status.update(stage="verified", success=True)
+                    write_status(status)
+                    return 0
                 status.update(
                     stage="failed",
-                    error="LaunchGame task ended before downstream verification",
+                    error="LaunchGame task ended before game-entry verification",
                     task_status=str(job.status),
                 )
                 write_status(status)

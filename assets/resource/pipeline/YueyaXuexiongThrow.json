@@ -44,7 +44,7 @@
             "target_lock_max_shift": 140
         },
         "on_error": [
-            "YueyaXuexiongDetect"
+            "YueyaXuexiongRetry"
         ],
         "next": [
             "YueyaXuexiongDetect"
@@ -113,6 +113,24 @@
             "YueyaXuexiongExploreAimLoop"
         ],
         "on_error": [
+            "YueyaXuexiongExploreAimRetry"
+        ]
+    },
+    "YueyaXuexiongRetry": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "pre_delay": 0,
+        "post_delay": 0,
+        "next": [
+            "YueyaXuexiongDetect"
+        ]
+    },
+    "YueyaXuexiongExploreAimRetry": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "pre_delay": 0,
+        "post_delay": 0,
+        "next": [
             "YueyaXuexiongExploreAimLoop"
         ]
     }

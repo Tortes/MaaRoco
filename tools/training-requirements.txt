@@ -1,0 +1,2 @@
+# Developer-only model training; never included in release packages.
+ultralytics==8.4.106

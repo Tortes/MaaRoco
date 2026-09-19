@@ -17,8 +17,9 @@ on:
     paths:
       - ".github/workflows/install.yml"
       - "assets/**"
-      - "tools/bundle_embedded_python.ps1"
-      - "tools/runtime-requirements.txt"
+      - "tools/build_native_agent.ps1"
+      - "tools/requirements.txt"
+      - "agent/**"
       - "**.py"
   pull_request:
     branches:
@@ -26,8 +27,9 @@ on:
     paths:
       - ".github/workflows/install.yml"
       - "assets/**"
-      - "tools/bundle_embedded_python.ps1"
-      - "tools/runtime-requirements.txt"
+      - "tools/build_native_agent.ps1"
+      - "tools/requirements.txt"
+      - "agent/**"
       - "**.py"
   workflow_dispatch:
 
@@ -185,7 +187,7 @@ jobs:
 
           cd tools/
           python -m pip install -r ./requirements.txt
-          python ./install.py ${{ needs.meta.outputs.tag }} ${{ matrix.os }} ${{ matrix.arch }} --skip-python
+          python ./install.py ${{ needs.meta.outputs.tag }} ${{ matrix.os }} ${{ matrix.arch }} --skip-agent
           cd ..
 
       - uses: actions/upload-artifact@v4
@@ -193,41 +195,57 @@ jobs:
           name: MaaRoco-${{ matrix.os }}-${{ matrix.arch }}-base
           path: "install"
 
-  bundle_python:
-    name: Bundle embedded Python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MaaRoco-native-sdk
+          path: |
+            deps/include
+            deps/lib
+            deps/bin
+
+  native_agent:
+    name: Build native C++ Agent
     needs: [meta, install]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12.10"
 
       - uses: actions/download-artifact@v4
         with:
           name: MaaRoco-win-x86_64-base
           path: install
 
-      - name: Bundle CPython and runtime dependencies
-        shell: pwsh
-        run: >-
-          ./tools/bundle_embedded_python.ps1
-          -InstallRoot ./install
-          -Requirements ./tools/runtime-requirements.txt
+      - uses: actions/download-artifact@v4
+        with:
+          name: MaaRoco-native-sdk
+          path: deps
 
-      - name: Verify packaged Agent entry point
+      - name: Build, test and install native Agent
+        shell: pwsh
+        run: ./tools/build_native_agent.ps1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - name: Test native Agent IPC with synthetic frames
         shell: pwsh
         run: |
+          python -m pip install MaaFw==5.13.0 numpy==2.2.6 opencv-python-headless==4.12.0.88
+          python tools/test_native_agent_integration.py --install-root install
+          if ($LASTEXITCODE -ne 0) { throw "Native Agent integration tests failed" }
+
+      - name: Verify native-only release package
+        shell: pwsh
+        run: |
+          python tools/validate_native_package.py install
+          if ($LASTEXITCODE -ne 0) { throw "Release package validation failed" }
           $interface = Get-Content ./install/interface.json -Raw | ConvertFrom-Json
-          if ($interface.agent.child_exec -ne "./python/python.exe") {
+          if ($interface.agent.child_exec -ne "./runtimes/win-x64/native/MaaRocoAgent.exe") {
             throw "Unexpected Agent executable: $($interface.agent.child_exec)"
           }
-          if (-not (Test-Path ./install/python/python.exe -PathType Leaf)) {
-            throw "Embedded Python executable is missing"
-          }
-          if (-not (Test-Path ./install/agent/main.py -PathType Leaf)) {
-            throw "Agent entry point is missing"
+          foreach ($legacy in @("python", "agent", "resource/model/detect/pipa_bird.onnx", "resource/pipeline/PipaBirdThrow.json")) {
+            if (Test-Path (Join-Path ./install $legacy)) { throw "Legacy runtime packaged: $legacy" }
           }
 
       - uses: actions/upload-artifact@v4
@@ -265,7 +283,7 @@ jobs:
     permissions:
       contents: write
     if: ${{ needs.meta.outputs.is_release == 'true' }}
-    needs: [meta, bundle_python, changelog]
+    needs: [meta, native_agent, changelog]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

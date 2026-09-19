@@ -11,31 +11,33 @@ import install
 sys.argv = original_argv
 
 
-class InstallPythonRuntimeTest(unittest.TestCase):
-    def test_missing_runtime_is_bundled_and_verified(self):
-        with tempfile.TemporaryDirectory() as temp_dir, \
-                patch.object(install, "install_path", Path(temp_dir)), \
+class InstallNativeRuntimeTest(unittest.TestCase):
+    def test_builds_native_agent(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(install, "install_path", Path(directory)), \
                 patch.object(sys, "platform", "win32"), \
                 patch.object(sys, "argv", ["install.py"]), \
                 patch.object(install.shutil, "which", return_value="pwsh"), \
                 patch.object(install.subprocess, "run") as run:
-            install.install_python_runtime()
-            self.assertEqual(run.call_count, 2)
-            self.assertIn("-HostPython", run.call_args_list[0].args[0])
+            install.install_agent()
+            run.assert_called_once()
+            self.assertIn("build_native_agent.ps1", " ".join(run.call_args.args[0]))
             self.assertTrue(run.call_args.kwargs["check"])
 
-    def test_existing_runtime_is_verified_without_downloading(self):
-        with tempfile.TemporaryDirectory() as temp_dir, \
-                patch.object(install, "install_path", Path(temp_dir)), \
-                patch.object(sys, "platform", "win32"), \
-                patch.object(sys, "argv", ["install.py"]), \
-                patch.object(install.subprocess, "run") as run:
-            executable = Path(temp_dir) / "python" / "python.exe"
-            executable.parent.mkdir()
-            executable.touch()
-            install.install_python_runtime()
-            run.assert_called_once()
-            self.assertEqual(run.call_args.args[0][0], str(executable))
+    def test_removes_legacy_runtime_but_preserves_user_data(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(install, "install_path", Path(directory)):
+            root = Path(directory)
+            for name in ("python/python.exe", "agent/main.py", "resource/model/detect/pipa_bird.onnx", "config/settings.json", "debug/test.log"):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("test")
+            install.remove_legacy_files()
+            self.assertFalse((root / "python").exists())
+            self.assertFalse((root / "agent").exists())
+            self.assertFalse((root / "resource/model/detect/pipa_bird.onnx").exists())
+            self.assertTrue((root / "config/settings.json").exists())
+            self.assertTrue((root / "debug/test.log").exists())
 
 
 class InstallDefaultConfigTest(unittest.TestCase):

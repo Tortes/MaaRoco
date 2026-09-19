@@ -1,0 +1,1183 @@
+#pragma once
+
+#include "value.hpp"
+
+namespace json
+{
+namespace _value_impl_detail
+{
+template <typename value_t>
+inline bool try_parse_integer(const std::string& str, value_t& result) noexcept
+{
+    static_assert(std::is_integral_v<value_t>, "value_t must be integral");
+    const char* first = str.data();
+    const char* last = str.data() + str.size();
+    const auto [ptr, ec] = std::from_chars(first, last, result);
+    return ec == std::errc {} && ptr == last;
+}
+
+template <typename value_t>
+inline value_t parse_integer(const std::string& str, const char* target_type)
+{
+    value_t result {};
+    if (try_parse_integer(str, result)) {
+        return result;
+    }
+
+    throw exception("Parse error: cannot convert number '" + str + "' to " + target_type);
+}
+
+template <typename value_t>
+inline value_t parse_floating(const std::string& str, const char* target_type)
+{
+    try {
+        size_t pos = 0;
+        value_t result {};
+        if constexpr (std::is_same_v<value_t, float>) {
+            result = std::stof(str, &pos);
+        }
+        else if constexpr (std::is_same_v<value_t, double>) {
+            result = std::stod(str, &pos);
+        }
+        else {
+            result = std::stold(str, &pos);
+        }
+
+        if (pos == str.size()) {
+            return result;
+        }
+    }
+    catch (const std::exception&) {
+    }
+
+    throw exception("Parse error: cannot convert number '" + str + "' to " + target_type);
+}
+
+template <typename value_t>
+inline bool can_parse_floating(const std::string& str) noexcept
+{
+    try {
+        size_t pos = 0;
+        if constexpr (std::is_same_v<value_t, float>) {
+            (void)std::stof(str, &pos);
+        }
+        else if constexpr (std::is_same_v<value_t, double>) {
+            (void)std::stod(str, &pos);
+        }
+        else {
+            (void)std::stold(str, &pos);
+        }
+        return pos == str.size();
+    }
+    catch (const std::exception&) {
+        return false;
+    }
+}
+} // namespace _value_impl_detail
+
+inline value::value() = default;
+
+inline value::value(const value& rhs)
+    : _type(rhs._type)
+    , _raw_data(deep_copy(rhs._raw_data))
+{
+}
+
+inline value::value(value&& rhs) noexcept = default;
+
+inline value::value(bool b)
+    : _type(value_type::boolean)
+    , _raw_data(b ? std::string(_utils::true_string()) : std::string(_utils::false_string()))
+{
+}
+
+inline value::value(int num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(unsigned num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(long num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(unsigned long num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(long long num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(unsigned long long num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(float num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(double num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(long double num)
+    : _type(value_type::number)
+    , _raw_data(_utils::to_basic_string(num))
+{
+}
+
+inline value::value(const char* str)
+    : _type(value_type::string)
+    , _raw_data(std::string(str))
+{
+}
+
+inline value::value(std::string str)
+    : _type(value_type::string)
+    , _raw_data(std::move(str))
+{
+}
+
+inline value::value(std::string_view str)
+    : _type(value_type::string)
+    , _raw_data(std::string(str))
+{
+}
+
+inline value::value(std::nullptr_t)
+    : _type(value_type::null)
+{
+}
+
+inline value::value(std::monostate)
+    : _type(value_type::null)
+{
+}
+
+inline value::value(const array& arr)
+    : _type(value_type::array)
+    , _raw_data(std::make_unique<array>(arr))
+{
+}
+
+inline value::value(array&& arr)
+    : _type(value_type::array)
+    , _raw_data(std::make_unique<array>(std::move(arr)))
+{
+}
+
+inline value::value(const object& obj)
+    : _type(value_type::object)
+    , _raw_data(std::make_unique<object>(obj))
+{
+}
+
+inline value::value(object&& obj)
+    : _type(value_type::object)
+    , _raw_data(std::make_unique<object>(std::move(obj)))
+{
+}
+
+inline value::value(std::initializer_list<typename object::value_type> init_list)
+    : _type(value_type::object)
+    , _raw_data(std::make_unique<object>(init_list))
+{
+}
+
+inline value::~value() = default;
+
+inline bool value::valid() const noexcept
+{
+    return _type != value_type::invalid;
+}
+
+inline bool value::empty() const noexcept
+{
+    switch (_type) {
+    case value_type::null:
+        return true;
+    case value_type::string:
+        return std::get<std::string>(_raw_data).empty();
+    case value_type::array:
+        return std::get<array_ptr>(_raw_data)->empty();
+    case value_type::object:
+        return std::get<object_ptr>(_raw_data)->empty();
+    default:
+        return false;
+    }
+}
+
+inline bool value::is_null() const noexcept
+{
+    return _type == value_type::null;
+}
+
+inline bool value::is_number() const noexcept
+{
+    return _type == value_type::number;
+}
+
+inline bool value::is_boolean() const noexcept
+{
+    return _type == value_type::boolean;
+}
+
+inline bool value::is_string() const noexcept
+{
+    return _type == value_type::string;
+}
+
+inline bool value::is_array() const noexcept
+{
+    return _type == value_type::array;
+}
+
+inline bool value::is_object() const noexcept
+{
+    return _type == value_type::object;
+}
+
+template <typename value_t>
+inline bool value::is() const noexcept
+{
+    if constexpr (std::is_same_v<value, value_t>) {
+        return true;
+    }
+    else if constexpr (_utils::has_check_json_in_member<value_t>::value) {
+        value_t temp {};
+        return temp.check_json(*this);
+    }
+    else if constexpr (_utils::has_check_json_in_templ_spec<value_t>::value) {
+        return ext::jsonization<value_t>().check_json(*this);
+    }
+    else if constexpr (std::is_same_v<bool, value_t>) {
+        return is_boolean();
+    }
+    else if constexpr (std::is_same_v<std::monostate, value_t>) {
+        return is_null();
+    }
+    else if constexpr (std::is_same_v<std::nullptr_t, value_t>) {
+        return is_null();
+    }
+    else if constexpr (_utils::is_nullable<value_t>) {
+        return is_null() || is<_utils::nullable_value_t<value_t>>();
+    }
+    else if constexpr (std::is_enum_v<value_t>) {
+        if (is_string()) {
+            return _reflection::string_to_enum<value_t>(as_string_view()).has_value();
+        }
+        return is<std::underlying_type_t<value_t>>();
+    }
+    else if constexpr (std::is_arithmetic_v<value_t>) {
+        if (!is_number()) {
+            return false;
+        }
+        if constexpr (std::is_integral_v<value_t>) {
+            value_t parsed {};
+            return _value_impl_detail::try_parse_integer(as_basic_type_str(), parsed);
+        }
+        else {
+            return _value_impl_detail::can_parse_floating<value_t>(as_basic_type_str());
+        }
+    }
+    else if constexpr (std::is_constructible_v<std::string, value_t>) {
+        return is_string();
+    }
+#ifdef MEOJSON_FS_PATH_EXTENSION
+    else if constexpr (std::is_same_v<std::decay_t<value_t>, std::filesystem::path>) {
+        return is_string();
+    }
+#endif
+    else if constexpr (std::is_same_v<array, value_t>) {
+        return is_array();
+    }
+    else if constexpr (_utils::is_collection<value_t>) {
+        return is_array() && all<typename value_t::value_type>();
+    }
+    else if constexpr (_utils::is_fixed_array<value_t>) {
+        return is_array() && as_array().size() == _utils::fixed_array_size<value_t> && all<typename value_t::value_type>();
+    }
+    else if constexpr (_utils::is_tuple_like<value_t>) {
+        if (!is_array()) {
+            return false;
+        }
+        if (as_array().size() != std::tuple_size_v<value_t>) {
+            return false;
+        }
+        return is_tuple_helper<value_t>(std::make_index_sequence<std::tuple_size_v<value_t>>());
+    }
+    else if constexpr (_utils::is_variant<value_t>) {
+        return is_variant_helper(static_cast<value_t*>(nullptr));
+    }
+    else if constexpr (std::is_same_v<object, value_t>) {
+        return is_object();
+    }
+    else if constexpr (_utils::is_map<value_t>) {
+        return is_object() && std::is_constructible_v<std::string, typename value_t::key_type> && all<typename value_t::mapped_type>();
+    }
+    else {
+        static_assert(!sizeof(value_t), "Unsupported type");
+    }
+}
+
+inline bool value::contains(const std::string& key) const
+{
+    return is_object() && as_object().contains(key);
+}
+
+inline bool value::contains(size_t pos) const
+{
+    return is_array() && as_array().contains(pos);
+}
+
+inline bool value::exists(const std::string& key) const
+{
+    return contains(key);
+}
+
+inline bool value::exists(size_t pos) const
+{
+    return contains(pos);
+}
+
+inline value::value_type value::type() const noexcept
+{
+    return _type;
+}
+
+inline std::string value::type_name() const noexcept
+{
+    std::string_view name = _reflection::enum_to_string(_type);
+    return name.empty() ? "unknown" : std::string(name);
+}
+
+inline std::string value::value_info() const noexcept
+{
+    try {
+        std::string info = "type=" + type_name();
+        switch (_type) {
+        case value_type::null:
+        case value_type::invalid:
+            break;
+        case value_type::boolean:
+        case value_type::number:
+        case value_type::string: {
+            std::string str_repr = to_string();
+            if (str_repr.length() > 100) {
+                info += ", value=" + str_repr.substr(0, 100) + "...";
+            }
+            else {
+                info += ", value=" + str_repr;
+            }
+            break;
+        }
+        case value_type::array:
+            info += ", size=" + std::to_string(as_array().size());
+            break;
+        case value_type::object:
+            info += ", size=" + std::to_string(as_object().size());
+            break;
+        }
+        return info;
+    }
+    catch (...) {
+        return "type=" + type_name();
+    }
+}
+
+inline const value& value::at(size_t pos) const
+{
+    return as_array().at(pos);
+}
+
+inline const value& value::at(const std::string& key) const
+{
+    return as_object().at(key);
+}
+
+inline bool value::erase(size_t pos)
+{
+    return as_array().erase(pos);
+}
+
+inline bool value::erase(const std::string& key)
+{
+    return as_object().erase(key);
+}
+
+template <typename... key_then_default_value_t>
+inline auto value::get(key_then_default_value_t&&... keys_then_default_value) const
+{
+    return get(std::forward_as_tuple(keys_then_default_value...), std::make_index_sequence<sizeof...(keys_then_default_value) - 1> {});
+}
+
+template <typename... key_then_default_value_t, size_t... keys_indexes_t>
+inline auto value::get(std::tuple<key_then_default_value_t...> keys_then_default_value, std::index_sequence<keys_indexes_t...>) const
+{
+    constexpr unsigned long default_value_index = sizeof...(key_then_default_value_t) - 1;
+    return get_helper(std::get<default_value_index>(keys_then_default_value), std::get<keys_indexes_t>(keys_then_default_value)...);
+}
+
+template <typename value_t, typename first_key_t, typename... rest_keys_t>
+inline auto value::get_helper(const value_t& default_value, first_key_t&& first, rest_keys_t&&... rest) const
+{
+    if constexpr (std::is_constructible_v<std::string, first_key_t>) {
+        return is_object() ? as_object().get_helper(default_value, std::forward<first_key_t>(first), std::forward<rest_keys_t>(rest)...)
+                           : default_value;
+    }
+    else if constexpr (std::is_integral_v<std::decay_t<first_key_t>>) {
+        return is_array() ? as_array().get_helper(default_value, std::forward<first_key_t>(first), std::forward<rest_keys_t>(rest)...)
+                          : default_value;
+    }
+    else {
+        static_assert(!sizeof(first_key_t), "Parameter must be integral or std::string constructible");
+    }
+}
+
+template <typename value_t, typename unique_key_t>
+inline auto value::get_helper(const value_t& default_value, unique_key_t&& first) const
+{
+    if constexpr (std::is_constructible_v<std::string, unique_key_t>) {
+        return is_object() ? as_object().get_helper(default_value, std::forward<unique_key_t>(first)) : default_value;
+    }
+    else if constexpr (std::is_integral_v<std::decay_t<unique_key_t>>) {
+        return is_array() ? as_array().get_helper(default_value, std::forward<unique_key_t>(first)) : default_value;
+    }
+    else {
+        static_assert(!sizeof(unique_key_t), "Parameter must be integral or std::string constructible");
+    }
+}
+
+template <typename value_t>
+inline std::optional<value_t> value::find(size_t pos) const
+{
+    const auto* val = find_value(pos);
+    return val && val->template is<value_t>() ? std::optional<value_t>(val->template as<value_t>()) : std::nullopt;
+}
+
+template <typename value_t>
+inline std::optional<value_t> value::find(const std::string& key) const
+{
+    const auto* val = find_value(key);
+    return val && val->template is<value_t>() ? std::optional<value_t>(val->template as<value_t>()) : std::nullopt;
+}
+
+inline const value* value::find_value(size_t pos) const
+{
+    return is_array() ? as_array().find_value(pos) : nullptr;
+}
+
+inline const value* value::find_value(const std::string& key) const
+{
+    return is_object() ? as_object().find_value(key) : nullptr;
+}
+
+inline bool value::as_boolean() const
+{
+    if (is_boolean()) {
+        if (const std::string& b_str = as_basic_type_str(); b_str == _utils::true_string()) {
+            return true;
+        }
+        else if (b_str == _utils::false_string()) {
+            return false;
+        }
+        else {
+            throw exception("Parse error: invalid boolean value '" + b_str + "'");
+        }
+    }
+    else {
+        throw exception("Type error: cannot convert to boolean, expected=boolean, " + value_info());
+    }
+}
+
+inline int value::as_integer() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<int>(as_basic_type_str(), "integer");
+    }
+    else {
+        throw exception("Type error: cannot convert to integer, expected=number, " + value_info());
+    }
+}
+
+inline unsigned value::as_unsigned() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<unsigned>(as_basic_type_str(), "unsigned");
+    }
+    else {
+        throw exception("Type error: cannot convert to unsigned, expected=number, " + value_info());
+    }
+}
+
+inline long value::as_long() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<long>(as_basic_type_str(), "long");
+    }
+    else {
+        throw exception("Type error: cannot convert to long, expected=number, " + value_info());
+    }
+}
+
+inline unsigned long value::as_unsigned_long() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<unsigned long>(as_basic_type_str(), "unsigned long");
+    }
+    else {
+        throw exception("Type error: cannot convert to unsigned long, expected=number, " + value_info());
+    }
+}
+
+inline long long value::as_long_long() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<long long>(as_basic_type_str(), "long long");
+    }
+    else {
+        throw exception("Type error: cannot convert to long long, expected=number, " + value_info());
+    }
+}
+
+inline unsigned long long value::as_unsigned_long_long() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_integer<unsigned long long>(as_basic_type_str(), "unsigned long long");
+    }
+    else {
+        throw exception("Type error: cannot convert to unsigned long long, expected=number, " + value_info());
+    }
+}
+
+inline float value::as_float() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_floating<float>(as_basic_type_str(), "float");
+    }
+    else {
+        throw exception("Type error: cannot convert to float, expected=number, " + value_info());
+    }
+}
+
+inline double value::as_double() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_floating<double>(as_basic_type_str(), "double");
+    }
+    else {
+        throw exception("Type error: cannot convert to double, expected=number, " + value_info());
+    }
+}
+
+inline long double value::as_long_double() const
+{
+    if (is_number()) {
+        return _value_impl_detail::parse_floating<long double>(as_basic_type_str(), "long double");
+    }
+    else {
+        throw exception("Type error: cannot convert to long double, expected=number, " + value_info());
+    }
+}
+
+inline std::string value::as_string() const
+{
+    if (is_string()) {
+        return as_basic_type_str();
+    }
+    else {
+        throw exception("Type error: cannot convert to string, expected=string, " + value_info());
+    }
+}
+
+inline std::string_view value::as_string_view() const
+{
+    if (is_string()) {
+        return as_basic_type_str();
+    }
+    else {
+        throw exception("Type error: cannot convert to string_view, expected=string, " + value_info());
+    }
+}
+
+inline const array& value::as_array() const
+{
+    if (is_array()) {
+        return *std::get<array_ptr>(_raw_data);
+    }
+
+    throw exception("Type error: cannot convert to array, expected=array, " + value_info());
+}
+
+inline const object& value::as_object() const
+{
+    if (is_object()) {
+        return *std::get<object_ptr>(_raw_data);
+    }
+
+    throw exception("Type error: cannot convert to object, expected=object, " + value_info());
+}
+
+inline array& value::as_array()
+{
+    if (empty()) {
+        _type = value_type::array;
+        _raw_data = std::make_unique<array>();
+    }
+
+    if (is_array()) {
+        return *std::get<array_ptr>(_raw_data);
+    }
+
+    throw exception("Type error: cannot convert to array, expected=array, " + value_info());
+}
+
+inline object& value::as_object()
+{
+    if (empty()) {
+        _type = value_type::object;
+        _raw_data = std::make_unique<object>();
+    }
+
+    if (is_object()) {
+        return *std::get<object_ptr>(_raw_data);
+    }
+
+    throw exception("Type error: cannot convert to object, expected=object, " + value_info());
+}
+
+template <typename tuple_t, size_t... Is>
+inline bool value::is_tuple_helper(std::index_sequence<Is...>) const noexcept
+{
+    const auto& arr = as_array();
+    return (arr[Is].is<std::tuple_element_t<Is, tuple_t>>() && ...);
+}
+
+template <typename... Ts>
+inline bool value::is_variant_helper(std::variant<Ts...>*) const noexcept
+{
+    return (is<Ts>() || ...);
+}
+
+template <typename value_t>
+inline value_t value::as() const&
+{
+    if constexpr (std::is_same_v<value, value_t>) {
+        return *this;
+    }
+    else if constexpr (_utils::has_from_json_in_member<value_t>::value) {
+        value_t dst {};
+        if (!dst.from_json(*this)) {
+            throw exception("Deserialization failed: from_json() returned false, " + value_info());
+        }
+        return dst;
+    }
+    else if constexpr (_utils::has_from_json_in_templ_spec<value_t>::value) {
+        value_t dst {};
+        if (!ext::jsonization<value_t>().from_json(*this, dst)) {
+            throw exception("Deserialization failed: from_json() returned false, " + value_info());
+        }
+        return dst;
+    }
+    else {
+        return static_cast<value_t>(*this);
+    }
+}
+
+template <typename value_t>
+inline value_t value::as() &&
+{
+    if constexpr (std::is_same_v<value, value_t>) {
+        return std::move(*this);
+    }
+    else if constexpr (_utils::has_from_json_in_member<value_t>::value) {
+        value_t dst {};
+        if (!dst.from_json(*this)) {
+            throw exception("Deserialization failed: from_json() returned false, " + value_info());
+        }
+        return dst;
+    }
+    else if constexpr (_utils::has_move_from_json_in_templ_spec<value_t>::value) {
+        value_t dst {};
+        if (!ext::jsonization<value_t>().move_from_json(std::move(*this), dst)) {
+            throw exception("Deserialization failed: move_from_json() returned false, " + value_info());
+        }
+        return dst;
+    }
+    else {
+        return static_cast<value_t>(*this);
+    }
+}
+
+inline const std::string& value::as_basic_type_str() const
+{
+    return std::get<std::string>(_raw_data);
+}
+
+inline std::string& value::as_basic_type_str()
+{
+    return std::get<std::string>(_raw_data);
+}
+
+template <typename... args_t>
+inline decltype(auto) value::emplace(args_t&&... args)
+{
+    constexpr bool is_array_args = std::is_constructible_v<typename array::value_type, args_t...>;
+    constexpr bool is_object_args = std::is_constructible_v<typename object::value_type, args_t...>;
+
+    static_assert(is_array_args || is_object_args, "Args can not constructure a array or object value");
+
+    if constexpr (is_array_args) {
+        return as_array().emplace_back(std::forward<args_t>(args)...);
+    }
+    else if constexpr (is_object_args) {
+        return as_object().emplace(std::forward<args_t>(args)...);
+    }
+}
+
+inline void value::clear() noexcept
+{
+    *this = value();
+}
+
+inline std::string value::to_string() const
+{
+    std::string str;
+    dump_to(str);
+    return str;
+}
+
+inline void value::dump_to(std::string& out) const
+{
+    switch (_type) {
+    case value_type::null:
+        out += _utils::null_string();
+        break;
+    case value_type::boolean:
+    case value_type::number:
+        out += as_basic_type_str();
+        break;
+    case value_type::string:
+        out.push_back('"');
+        _utils::append_escaped_string(out, as_basic_type_str());
+        out.push_back('"');
+        break;
+    case value_type::array:
+        as_array().dump_to(out);
+        break;
+    case value_type::object:
+        as_object().dump_to(out);
+        break;
+    default:
+        throw exception("Internal error: unknown value type, " + value_info());
+    }
+}
+
+inline std::string value::format(size_t indent, size_t indent_times) const
+{
+    std::string str;
+    format_to(str, indent, indent_times);
+    return str;
+}
+
+inline void value::format_to(std::string& out, size_t indent, size_t indent_times) const
+{
+    switch (_type) {
+    case value_type::null:
+    case value_type::boolean:
+    case value_type::number:
+    case value_type::string:
+        dump_to(out);
+        break;
+    case value_type::array:
+        as_array().format_to(out, indent, indent_times);
+        break;
+    case value_type::object:
+        as_object().format_to(out, indent, indent_times);
+        break;
+    default:
+        throw exception("Internal error: unknown value type, " + value_info());
+    }
+}
+
+inline std::string value::dumps(std::optional<size_t> indent) const
+{
+    return indent ? format(*indent) : to_string();
+}
+
+inline std::string value::format(size_t indent) const
+{
+    return format(indent, 0);
+}
+
+template <typename value_t>
+inline bool value::all() const
+{
+    if (is_array()) {
+        return as_array().template all<value_t>();
+    }
+    else if (is_object()) {
+        return as_object().template all<value_t>();
+    }
+    else {
+        return false;
+    }
+}
+
+inline value& value::operator=(const value& rhs)
+{
+    _type = rhs._type;
+    _raw_data = deep_copy(rhs._raw_data);
+
+    return *this;
+}
+
+inline value& value::operator=(value&& rhs) noexcept = default;
+
+inline bool value::operator==(const value& rhs) const
+{
+    if (_type != rhs._type) {
+        return false;
+    }
+
+    switch (_type) {
+    case value_type::null:
+        return rhs.is_null();
+    case value_type::boolean:
+    case value_type::number:
+    case value_type::string:
+        return _raw_data == rhs._raw_data;
+    case value_type::array:
+        return as_array() == rhs.as_array();
+    case value_type::object:
+        return as_object() == rhs.as_object();
+    default:
+        throw exception("Internal error: unknown value type, " + value_info());
+    }
+}
+
+inline bool value::operator!=(const value& rhs) const
+{
+    return !(*this == rhs);
+}
+
+inline value::operator bool() const
+{
+    return as_boolean();
+}
+
+inline value::operator int() const
+{
+    return as_integer();
+}
+
+inline value::operator unsigned() const
+{
+    return as_unsigned();
+}
+
+inline value::operator long() const
+{
+    return as_long();
+}
+
+inline value::operator unsigned long() const
+{
+    return as_unsigned_long();
+}
+
+inline value::operator long long() const
+{
+    return as_long_long();
+}
+
+inline value::operator unsigned long long() const
+{
+    return as_unsigned_long_long();
+}
+
+inline value::operator float() const
+{
+    return as_float();
+}
+
+inline value::operator double() const
+{
+    return as_double();
+}
+
+inline value::operator long double() const
+{
+    return as_long_double();
+}
+
+inline value::operator std::string() const
+{
+    return as_string();
+}
+
+inline value::operator std::string_view() const&
+{
+    return as_string_view();
+}
+
+inline value::operator array() const
+{
+    return as_array();
+}
+
+inline value::operator object() const
+{
+    return as_object();
+}
+
+inline value::operator std::nullptr_t() const
+{
+    if (is_null()) {
+        return nullptr;
+    }
+    else {
+        throw exception("Type error: cannot convert to nullptr_t, expected=null, " + value_info());
+    }
+}
+
+inline value::operator std::monostate() const
+{
+    if (is_null()) {
+        return std::monostate {};
+    }
+    else {
+        throw exception("Type error: cannot convert to monostate, expected=null, " + value_info());
+    }
+}
+
+inline const value& value::operator[](size_t pos) const
+{
+    // array not support to create by operator[]
+
+    return as_array()[pos];
+}
+
+inline value& value::operator[](size_t pos)
+{
+    // array not support to create by operator[]
+
+    return as_array()[pos];
+}
+
+inline value& value::operator[](const std::string& key)
+{
+    if (empty()) {
+        _type = value_type::object;
+        _raw_data = std::make_unique<object>();
+    }
+
+    return as_object()[key];
+}
+
+inline value& value::operator[](std::string&& key)
+{
+    if (empty()) {
+        _type = value_type::object;
+        _raw_data = std::make_unique<object>();
+    }
+
+    return as_object()[std::move(key)];
+}
+
+inline value value::operator|(const object& rhs) const&
+{
+    value result;
+    result._type = value_type::object;
+    result._raw_data = std::make_unique<object>(as_object() | rhs);
+    return result;
+}
+
+inline value value::operator|(object&& rhs) const&
+{
+    value result;
+    result._type = value_type::object;
+    result._raw_data = std::make_unique<object>(as_object() | std::move(rhs));
+    return result;
+}
+
+inline value value::operator|(const object& rhs) &&
+{
+    value result;
+    result._type = value_type::object;
+    result._raw_data = std::make_unique<object>(std::move(as_object()) | rhs);
+    return result;
+}
+
+inline value value::operator|(object&& rhs) &&
+{
+    value result;
+    result._type = value_type::object;
+    result._raw_data = std::make_unique<object>(std::move(as_object()) | std::move(rhs));
+    return result;
+}
+
+inline value& value::operator|=(const object& rhs)
+{
+    as_object() |= rhs;
+    return *this;
+}
+
+inline value& value::operator|=(object&& rhs)
+{
+    as_object() |= std::move(rhs);
+    return *this;
+}
+
+inline value value::operator+(const array& rhs) const&
+{
+    value result;
+    result._type = value_type::array;
+    result._raw_data = std::make_unique<array>(as_array() + rhs);
+    return result;
+}
+
+inline value value::operator+(array&& rhs) const&
+{
+    value result;
+    result._type = value_type::array;
+    result._raw_data = std::make_unique<array>(as_array() + std::move(rhs));
+    return result;
+}
+
+inline value value::operator+(const array& rhs) &&
+{
+    value result;
+    result._type = value_type::array;
+    result._raw_data = std::make_unique<array>(std::move(as_array()) + rhs);
+    return result;
+}
+
+inline value value::operator+(array&& rhs) &&
+{
+    value result;
+    result._type = value_type::array;
+    result._raw_data = std::make_unique<array>(std::move(as_array()) + std::move(rhs));
+    return result;
+}
+
+inline value& value::operator+=(const array& rhs)
+{
+    as_array() += rhs;
+    return *this;
+}
+
+inline value& value::operator+=(array&& rhs)
+{
+    as_array() += std::move(rhs);
+    return *this;
+}
+
+template <typename... args_t>
+inline value::value(value_type type, args_t&&... args)
+    : _type(type)
+    , _raw_data(std::forward<args_t>(args)...)
+{
+    static_assert(std::is_constructible_v<var_t, args_t...>, "Parameter can't be used to construct a var_t");
+}
+
+inline typename value::var_t value::deep_copy(const var_t& src)
+{
+    var_t dst;
+    if (const auto string_ptr = std::get_if<std::string>(&src)) {
+        dst = *string_ptr;
+    }
+    else if (const auto arr_ptr = std::get_if<array_ptr>(&src)) {
+        dst = std::make_unique<array>(**arr_ptr);
+    }
+    else if (const auto obj_ptr = std::get_if<object_ptr>(&src)) {
+        dst = std::make_unique<object>(**obj_ptr);
+    }
+    else {
+        // maybe invalid_value
+    }
+
+    return dst;
+}
+
+inline std::ostream& operator<<(std::ostream& out, const value& val)
+{
+    out << val.format();
+    return out;
+}
+
+// Implementation of variant constructors
+template <
+    typename... Ts,
+    std::enable_if_t<
+        (sizeof...(Ts) > 0) && !_utils::has_to_json_in_member<std::variant<Ts...>>::value
+            && !_utils::has_to_json_in_templ_spec<std::variant<Ts...>>::value,
+        bool>>
+inline value::value(const std::variant<Ts...>& var)
+{
+    std::visit([this](const auto& val) { *this = value(val); }, var);
+}
+
+template <
+    typename... Ts,
+    std::enable_if_t<
+        (sizeof...(Ts) > 0) && !_utils::has_to_json_in_member<std::variant<Ts...>>::value
+            && !_utils::has_to_json_in_templ_spec<std::variant<Ts...>>::value,
+        bool>>
+inline value::value(std::variant<Ts...>&& var)
+{
+    std::visit([this](auto&& val) { *this = value(std::move(val)); }, std::move(var));
+}
+
+template <typename... Ts>
+inline std::variant<Ts...> value::to_variant_helper() const&
+{
+    std::variant<Ts...> result;
+    if (!((is<Ts>() ? (result = as<Ts>(), true) : false) || ...)) {
+        throw exception("Type error: cannot convert to any variant alternative, " + value_info());
+    }
+    return result;
+}
+
+template <typename... Ts>
+inline std::variant<Ts...> value::move_to_variant_helper() &&
+{
+    std::variant<Ts...> result;
+    if (!((is<Ts>() ? (result = std::move(*this).as<Ts>(), true) : false) || ...)) {
+        throw exception("Type error: cannot convert to any variant alternative, " + value_info());
+    }
+    return result;
+}
+
+// Implementation of variant conversion operators
+template <typename... Ts>
+inline value::operator std::variant<Ts...>() const&
+{
+    return to_variant_helper<Ts...>();
+}
+
+template <typename... Ts>
+inline value::operator std::variant<Ts...>() &&
+{
+    return std::move(*this).move_to_variant_helper<Ts...>();
+}
+} // namespace json

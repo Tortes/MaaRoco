@@ -28,8 +28,14 @@
             "wegame_click_entry": "LaunchGameClickWeGameStart",
             "wegame_mouse_method": 1,
             "wegame_keyboard_method": 1,
+            "wegame_process_name": "wegame.exe",
+            "wegame_retry_interval_ms": 3000,
+            "wegame_success_retry_interval_ms": 15000,
+            "wegame_click_attempt_timeout_ms": 10000,
             "timeout_ms": 180000,
             "poll_interval_ms": 500,
+            "diagnostic_interval_ms": 10000,
+            "process_name": "NRC-Win64-Shipping.exe",
             "mouse_method": 512,
             "keyboard_method": 512,
             "downstream_entry": "LaunchGameEnterWorldStart"
@@ -53,6 +59,77 @@
         "rate_limit": 500,
         "timeout": 120000,
         "next": []
+    },
+    "LaunchGameClickWeGameStartWeChat": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "post_delay": 0,
+        "rate_limit": 500,
+        "timeout": 15000,
+        "next": [
+            "LaunchGameWeChatSourceSelected",
+            "LaunchGameQQSourceButton"
+        ]
+    },
+    "LaunchGameQQSourceButton": {
+        "recognition": "TemplateMatch",
+        "template": "wegame_source_qq.png",
+        "roi": [
+            850,
+            600,
+            220,
+            120
+        ],
+        "threshold": 0.86,
+        "order_by": "Score",
+        "method": 3,
+        "action": "Click",
+        "post_delay": 600,
+        "rate_limit": 500,
+        "timeout": 15000,
+        "next": [
+            "LaunchGameSourceMenuWeChat"
+        ]
+    },
+    "LaunchGameSourceMenuWeChat": {
+        "recognition": "TemplateMatch",
+        "template": "wegame_source_menu_wechat.png",
+        "roi": [
+            760,
+            470,
+            340,
+            190
+        ],
+        "threshold": 0.86,
+        "order_by": "Score",
+        "method": 3,
+        "action": "Click",
+        "post_delay": 1000,
+        "rate_limit": 500,
+        "timeout": 10000,
+        "next": [
+            "LaunchGameWeChatSourceSelected"
+        ]
+    },
+    "LaunchGameWeChatSourceSelected": {
+        "recognition": "TemplateMatch",
+        "template": "wegame_source_wechat.png",
+        "roi": [
+            850,
+            600,
+            220,
+            120
+        ],
+        "threshold": 0.86,
+        "order_by": "Score",
+        "method": 3,
+        "action": "DoNothing",
+        "post_delay": 300,
+        "rate_limit": 500,
+        "timeout": 15000,
+        "next": [
+            "LaunchGameClickWeGameStart"
+        ]
     },
     "LaunchGameControllerReady": {
         "recognition": "DirectHit",
@@ -115,8 +192,6 @@
         "inverse": true,
         "action": "DoNothing",
         "post_delay": 1000,
-        "next": [
-            "BattleHostingStart"
-        ]
+        "next": []
     }
 }

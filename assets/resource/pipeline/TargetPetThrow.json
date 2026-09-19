@@ -68,6 +68,15 @@
             "TargetPetAimLoop"
         ],
         "on_error": [
+            "TargetPetAimRetry"
+        ]
+    },
+    "TargetPetAimRetry": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "pre_delay": 0,
+        "post_delay": 0,
+        "next": [
             "TargetPetAimLoop"
         ]
     }

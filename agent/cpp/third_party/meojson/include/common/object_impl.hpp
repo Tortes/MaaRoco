@@ -1,0 +1,369 @@
+#pragma once
+
+#include "object.hpp"
+
+namespace json
+{
+namespace _object_impl_detail
+{
+inline void merge_object(object::raw_object& dst, const object& src)
+{
+    for (const auto& [key, val] : src) {
+        dst.insert_or_assign(key, val);
+    }
+}
+
+inline void merge_object_move(object::raw_object& dst, object& src)
+{
+    for (auto& [key, val] : src) {
+        dst.insert_or_assign(key, std::move(val));
+    }
+}
+} // namespace _object_impl_detail
+
+inline object::object() = default;
+inline object::object(const object& rhs) = default;
+inline object::object(object&& rhs) noexcept = default;
+inline object::~object() = default;
+inline object& object::operator=(const object&) = default;
+inline object& object::operator=(object&&) noexcept = default;
+
+inline object::object(std::initializer_list<value_type> init_list)
+    : _object_data(std::make_move_iterator(init_list.begin()), std::make_move_iterator(init_list.end()))
+{
+}
+
+template <
+    typename map_t,
+    std::enable_if_t<
+        _utils::is_map<map_t> && std::is_same_v<typename map_t::key_type, std::string>
+            && !std::is_same_v<std::decay_t<map_t>, object> && !_utils::has_to_json_in_member<map_t>::value
+            && !_utils::has_to_json_in_templ_spec<map_t>::value,
+        bool>>
+inline object::object(const map_t& m)
+{
+    for (const auto& [key, val] : m) {
+        _object_data.emplace(key, val);
+    }
+}
+
+template <
+    typename map_t,
+    std::enable_if_t<
+        _utils::is_map<map_t> && std::is_same_v<typename map_t::key_type, std::string>
+            && !std::is_same_v<std::decay_t<map_t>, object> && !_utils::has_to_json_in_member<map_t>::value
+            && !_utils::has_to_json_in_templ_spec<map_t>::value,
+        bool>>
+inline object::object(map_t&& m)
+{
+    for (auto& [key, val] : m) {
+        _object_data.emplace(key, std::move(val));
+    }
+}
+
+inline bool object::contains(const std::string& key) const
+{
+    return _object_data.find(key) != _object_data.cend();
+}
+
+inline bool object::empty() const noexcept
+{
+    return _object_data.empty();
+}
+
+inline size_t object::size() const noexcept
+{
+    return _object_data.size();
+}
+
+inline bool object::exists(const std::string& key) const
+{
+    return contains(key);
+}
+
+inline const value& object::at(const std::string& key) const
+{
+    return _object_data.at(key);
+}
+
+inline void object::clear() noexcept
+{
+    _object_data.clear();
+}
+
+inline bool object::erase(const std::string& key)
+{
+    return _object_data.erase(key) > 0 ? true : false;
+}
+
+inline bool object::erase(iterator iter)
+{
+    if (iter == _object_data.end()) {
+        return false;
+    }
+    _object_data.erase(iter);
+    return true;
+}
+
+template <typename... args_t>
+inline decltype(auto) object::emplace(args_t&&... args)
+{
+    static_assert(std::is_constructible_v<value_type, args_t...>, "Parameter can't be used to construct a raw_object::value_type");
+    return _object_data.insert_or_assign(std::forward<args_t>(args)...);
+}
+
+template <typename... args_t>
+inline decltype(auto) object::insert(args_t&&... args)
+{
+    return emplace(std::forward<args_t>(args)...);
+}
+
+inline std::string object::to_string() const
+{
+    std::string str;
+    dump_to(str);
+    return str;
+}
+
+inline void object::dump_to(std::string& out) const
+{
+    out.push_back('{');
+    for (auto iter = _object_data.cbegin(); iter != _object_data.cend();) {
+        const auto& [key, val] = *iter;
+        out.push_back('"');
+        _utils::append_escaped_string(out, key);
+        out.push_back('"');
+        out.push_back(':');
+        val.dump_to(out);
+        if (++iter != _object_data.cend()) {
+            out.push_back(',');
+        }
+    }
+    out.push_back('}');
+}
+
+inline std::string object::format(size_t indent, size_t indent_times) const
+{
+    std::string str;
+    format_to(str, indent, indent_times);
+    return str;
+}
+
+inline void object::format_to(std::string& out, size_t indent, size_t indent_times) const
+{
+    out.push_back('{');
+    out.push_back('\n');
+    for (auto iter = _object_data.cbegin(); iter != _object_data.cend();) {
+        const auto& [key, val] = *iter;
+        out.append(indent * (indent_times + 1), ' ');
+        out.push_back('"');
+        _utils::append_escaped_string(out, key);
+        out.push_back('"');
+        out.push_back(':');
+        out.push_back(' ');
+        val.format_to(out, indent, indent_times + 1);
+        if (++iter != _object_data.cend()) {
+            out.push_back(',');
+        }
+        out.push_back('\n');
+    }
+    out.append(indent * indent_times, ' ');
+    out.push_back('}');
+}
+
+inline std::string object::dumps(std::optional<size_t> indent) const
+{
+    return indent ? format(*indent) : to_string();
+}
+
+inline std::string object::format(size_t indent) const
+{
+    return format(indent, 0);
+}
+
+template <typename value_t>
+inline bool object::all() const
+{
+    for (const auto& [_, val] : _object_data) {
+        if (!val.template is<value_t>()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+template <typename... key_then_default_value_t>
+inline auto object::get(key_then_default_value_t&&... keys_then_default_value) const
+{
+    return get(std::forward_as_tuple(keys_then_default_value...), std::make_index_sequence<sizeof...(keys_then_default_value) - 1> {});
+}
+
+template <typename... key_then_default_value_t, size_t... keys_indexes_t>
+inline auto object::get(std::tuple<key_then_default_value_t...> keys_then_default_value, std::index_sequence<keys_indexes_t...>) const
+{
+    constexpr unsigned long default_value_index = sizeof...(key_then_default_value_t) - 1;
+    return get_helper(std::get<default_value_index>(keys_then_default_value), std::get<keys_indexes_t>(keys_then_default_value)...);
+}
+
+template <typename value_t, typename... rest_keys_t>
+inline auto object::get_helper(const value_t& default_value, const std::string& key, rest_keys_t&&... rest) const
+{
+    auto iter = _object_data.find(key);
+    if (iter == _object_data.end()) {
+        return _utils::default_or_string(default_value);
+    }
+
+    return iter->second.get_helper(default_value, std::forward<rest_keys_t>(rest)...);
+}
+
+template <typename value_t>
+inline auto object::get_helper(const value_t& default_value, const std::string& key) const
+{
+    auto iter = _object_data.find(key);
+    if (iter == _object_data.end()) {
+        return _utils::default_or_string(default_value);
+    }
+
+    return _utils::json_value_or_default(iter->second, default_value);
+}
+
+template <typename value_t>
+inline std::optional<value_t> object::find(const std::string& key) const
+{
+    const auto* val = find_value(key);
+    if (!val) {
+        return std::nullopt;
+    }
+    return val->template is<value_t>() ? std::optional<value_t>(val->template as<value_t>()) : std::nullopt;
+}
+
+inline const value* object::find_value(const std::string& key) const
+{
+    auto iter = _object_data.find(key);
+    return iter == _object_data.end() ? nullptr : &iter->second;
+}
+
+inline typename object::iterator object::begin() noexcept
+{
+    return _object_data.begin();
+}
+
+inline typename object::iterator object::end() noexcept
+{
+    return _object_data.end();
+}
+
+inline typename object::const_iterator object::begin() const noexcept
+{
+    return _object_data.begin();
+}
+
+inline typename object::const_iterator object::end() const noexcept
+{
+    return _object_data.end();
+}
+
+inline typename object::const_iterator object::cbegin() const noexcept
+{
+    return _object_data.cbegin();
+}
+
+inline typename object::const_iterator object::cend() const noexcept
+{
+    return _object_data.cend();
+}
+
+inline value& object::operator[](const std::string& key)
+{
+    return _object_data[key];
+}
+
+inline value& object::operator[](std::string&& key)
+{
+    return _object_data[std::move(key)];
+}
+
+inline object object::operator|(const object& rhs) const&
+{
+    object temp = *this;
+    _object_impl_detail::merge_object(temp._object_data, rhs);
+    return temp;
+}
+
+inline object object::operator|(object&& rhs) const&
+{
+    object temp = *this;
+    _object_impl_detail::merge_object_move(temp._object_data, rhs);
+    return temp;
+}
+
+inline object object::operator|(const object& rhs) &&
+{
+    _object_impl_detail::merge_object(_object_data, rhs);
+    return std::move(*this);
+}
+
+inline object object::operator|(object&& rhs) &&
+{
+    _object_impl_detail::merge_object_move(_object_data, rhs);
+    return std::move(*this);
+}
+
+inline object& object::operator|=(const object& rhs)
+{
+    _object_impl_detail::merge_object(_object_data, rhs);
+    return *this;
+}
+
+inline object& object::operator|=(object&& rhs)
+{
+    _object_impl_detail::merge_object_move(_object_data, rhs);
+    return *this;
+}
+
+inline bool object::operator==(const object& rhs) const
+{
+    return _object_data == rhs._object_data;
+}
+
+inline bool object::operator!=(const object& rhs) const
+{
+    return !(*this == rhs);
+}
+
+inline std::ostream& operator<<(std::ostream& out, const object& obj)
+{
+    out << obj.format();
+    return out;
+}
+
+template <typename T>
+inline T object::as() const&
+{
+    if constexpr (_utils::is_map<T> && std::is_same_v<typename T::key_type, std::string>) {
+        T result;
+        for (const auto& [key, val] : _object_data) {
+            result.emplace(key, val.as<typename T::mapped_type>());
+        }
+        return result;
+    }
+    else {
+        static_assert(!sizeof(T), "Unsupported type for object::as()");
+    }
+}
+
+template <typename T>
+inline T object::as() &&
+{
+    if constexpr (_utils::is_map<T> && std::is_same_v<typename T::key_type, std::string>) {
+        T result;
+        for (auto& [key, val] : _object_data) {
+            result.emplace(key, std::move(val).as<typename T::mapped_type>());
+        }
+        return result;
+    }
+    else {
+        static_assert(!sizeof(T), "Unsupported type for object::as()");
+    }
+}
+} // namespace json

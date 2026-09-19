@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = ROOT / "install"
 BINARY = ROOT / "deps" / "bin"
-AGENT_LOG = INSTALL / "debug" / "pipa_bird.log"
+AGENT_LOG = INSTALL / "debug" / "target_pet.log"
 
 
 def find_window(class_name: str) -> int:
@@ -70,7 +70,7 @@ def start_agent(client, resource, controller, tasker) -> subprocess.Popen[str]:
     environment["MAAFW_BINARY_PATH"] = str(BINARY)
     environment["PATH"] = f"{BINARY};{environment['PATH']}"
     process = subprocess.Popen(
-        [sys.executable, str(INSTALL / "agent" / "main.py"), client.identifier],
+        [str(INSTALL / "runtimes/win-x64/native/MaaRocoAgent.exe"), client.identifier],
         cwd=INSTALL,
         env=environment,
         stdout=subprocess.DEVNULL,
@@ -190,7 +190,7 @@ def main() -> int:
             while deadline is None or time.monotonic() < deadline:
                 log_offset, fragment = read_after(AGENT_LOG, log_offset)
                 for line in fragment.splitlines():
-                    if "[PipaBird]" in line or "[TargetPet]" in line:
+                    if "[TargetPet]" in line:
                         attempt_report["events"].append(line)
                     if (
                         "release: target confirmed" in line

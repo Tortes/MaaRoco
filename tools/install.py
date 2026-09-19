@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import filecmp
 import hashlib
 import re
 import shutil
@@ -20,6 +21,8 @@ from configure import configure_ocr_model
 
 working_dir = Path(__file__).parent.parent.resolve()
 install_path = working_dir / Path("install")
+if "--install-dir" in sys.argv:
+    install_path = Path(sys.argv[sys.argv.index("--install-dir") + 1]).resolve()
 version = len(sys.argv) > 1 and sys.argv[1] or "v0.0.1"
 STABLE_RELEASE_VERSION = re.compile(r"^v\d+\.\d+\.\d+$")
 
@@ -31,6 +34,16 @@ if sys.argv.__len__() < 4:
 
 os_name = sys.argv[2]
 arch = sys.argv[3]
+
+
+def copy_file_if_different(source, destination):
+    """Avoid replacing an identical runtime file that a running app locked."""
+    destination_path = Path(destination)
+    if destination_path.is_file() and filecmp.cmp(
+        source, destination_path, shallow=False
+    ):
+        return str(destination_path)
+    return shutil.copy2(source, destination)
 
 
 def get_dotnet_platform_tag():
@@ -88,9 +101,12 @@ def install_deps():
             dirs_exist_ok=True,
         )
     else:
+        native_dir = (
+            install_path / "runtimes" / get_dotnet_platform_tag() / "native"
+        )
         shutil.copytree(
             working_dir / "deps" / "bin",
-            install_path / "runtimes" / get_dotnet_platform_tag() / "native",
+            native_dir,
             ignore=shutil.ignore_patterns(
                 "*MaaDbgControlUnit*",
                 "*MaaThriftControlUnit*",
@@ -101,16 +117,23 @@ def install_deps():
                 "*MaaPiCli*",
             ),
             dirs_exist_ok=True,
+            copy_function=copy_file_if_different,
         )
+        # MaaFramework probes this adjacent directory during standalone runner
+        # initialization. Keep it present even though MFA loads its plugins from
+        # the platform-specific directory below.
+        (native_dir / "plugins").mkdir(parents=True, exist_ok=True)
         shutil.copytree(
             working_dir / "deps" / "share" / "MaaAgentBinary",
             install_path / "libs" / "MaaAgentBinary",
             dirs_exist_ok=True,
+            copy_function=copy_file_if_different,
         )
         shutil.copytree(
             working_dir / "deps" / "bin" / "plugins",
             install_path / "plugins" / get_dotnet_platform_tag(),
             dirs_exist_ok=True,
+            copy_function=copy_file_if_different,
         )
 
 
@@ -159,42 +182,25 @@ def install_resource():
 
 
 def install_agent():
-    source_dir = working_dir / "agent"
-    if source_dir.exists():
-        shutil.copytree(source_dir, install_path / "agent", dirs_exist_ok=True)
-
-
-def install_python_runtime():
-    """Complete local Windows installs; CI bundles its base artifact separately."""
-    if os_name != "win" or arch != "x86_64" or "--skip-python" in sys.argv:
+    """Build the native user runtime; Python is only a developer build tool."""
+    if "--skip-agent" in sys.argv:
         return
-    if sys.platform != "win32":
-        raise RuntimeError("Bundle Windows Python on Windows, or use --skip-python for a base artifact.")
-    executable = install_path / "python" / "python.exe"
-    if not executable.is_file():
-        shell = shutil.which("pwsh") or shutil.which("powershell")
-        if not shell:
-            raise RuntimeError("PowerShell is required to bundle embedded Python.")
-        subprocess.run(
-            [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-             str(working_dir / "tools" / "bundle_embedded_python.ps1"),
-             "-InstallRoot", str(install_path), "-HostPython", sys.executable],
-            check=True,
-        )
+    if os_name != "win" or arch != "x86_64" or sys.platform != "win32":
+        raise RuntimeError("Build the Windows x64 Agent on Windows, or use --skip-agent for the CI base artifact.")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        raise RuntimeError("PowerShell is required to build the native Agent.")
     subprocess.run(
-        [str(executable), "-I", "-c",
-         "import cv2, numpy, interception, win32api; "
-         "from importlib.metadata import version; "
-         "assert version('MaaFw') == '5.13.0', 'Rebundle embedded Python for MaaFw 5.13.0'; "
-         "from maa.agent.agent_server import AgentServer; "
-         "import runpy; runpy.run_path('agent/main.py', run_name='maaroco_install_check'); "
-         "print('Installed Python and Agent import check passed')"],
-        cwd=install_path,
-        check=True,
+        [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+         str(working_dir / "tools" / "build_native_agent.ps1"),
+         "-InstallRoot", str(install_path)], check=True,
     )
 
 
 def install_chores():
+    licenses = install_path / "licenses"
+    licenses.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(working_dir / "agent/cpp/third_party/meojson/LICENSE", licenses / "meojson.txt")
     shutil.copy2(working_dir / "maaframework.lock.json", install_path)
     shutil.copy2(
         working_dir / "README.md",
@@ -245,6 +251,17 @@ def install_default_config():
             "UI.LiveView.EnableLiveView": False,
         }
     )
+    for task_item in instance.get("TaskItems", []):
+        if task_item.get("name") == "LaunchGame":
+            task_item["controller"] = ["Win32-Launcher"]
+            task_options = task_item.setdefault("option", [])
+            if not any(
+                item.get("name") == "WeGameLoginSource"
+                for item in task_options
+            ):
+                task_options.append(
+                    {"name": "WeGameLoginSource", "index": 0}
+                )
     with open(instance_path, "w", encoding="utf-8") as f:
         jsonc.dump(instance, f, ensure_ascii=False, indent=2)
 
@@ -263,12 +280,20 @@ def install_global_config():
 
 
 def remove_legacy_files():
-    stale_log_script = install_path / "resource" / "tools" / "continuous_throw_log.ps1"
-    if stale_log_script.exists():
-        stale_log_script.unlink()
-    tools_dir = install_path / "resource" / "tools"
-    if tools_dir.exists() and not any(tools_dir.iterdir()):
-        tools_dir.rmdir()
+    root = install_path.resolve()
+    for relative in (
+        "python", "agent", "resource/pipeline/PipaBirdThrow.json",
+        "resource/model/detect/pipa_bird.onnx", "tasks/PipaBirdThrow.json",
+        "resource/tools/continuous_throw_log.ps1",
+    ):
+        path = root / relative
+        resolved = path.resolve()
+        if not resolved.is_relative_to(root) or resolved == root:
+            raise RuntimeError(f"Refusing to clean path outside installation: {path}")
+        if path.is_dir():
+            shutil.rmtree(path)
+        elif path.exists():
+            path.unlink()
 
 
 def install_launcher():
@@ -316,12 +341,11 @@ def install_launcher():
 if __name__ == "__main__":
     install_deps()
     install_resource()
-    install_agent()
     install_chores()
     install_default_config()
     install_global_config()
-    remove_legacy_files()
     install_launcher()
-    install_python_runtime()
+    install_agent()
+    remove_legacy_files()
 
     print(f"Install to {install_path} successfully.")

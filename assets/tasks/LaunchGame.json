@@ -7,11 +7,11 @@
             "default_check": false,
             "description": "$task.LaunchGame.description",
             "option": [
-                "WeGamePath"
+                "WeGamePath",
+                "WeGameLoginSource"
             ],
             "controller": [
-                "Win32-Launcher",
-                "Win32-Interception"
+                "Win32-Launcher"
             ],
             "group": [
                 "assist"
@@ -43,6 +43,31 @@
                     }
                 }
             }
+        },
+        "WeGameLoginSource": {
+            "type": "select",
+            "label": "$option.WeGameLoginSource.label",
+            "description": "$option.WeGameLoginSource.description",
+            "default_case": "QQ",
+            "cases": [
+                {
+                    "name": "QQ",
+                    "label": "$option.WeGameLoginSource.case.QQ.label",
+                    "pipeline_override": {}
+                },
+                {
+                    "name": "WeChat",
+                    "label": "$option.WeGameLoginSource.case.WeChat.label",
+                    "pipeline_override": {
+                        "LaunchGameWaitForWindow": {
+                            "custom_action_param": {
+                                "wegame_click_entry": "LaunchGameClickWeGameStartWeChat",
+                                "wegame_click_attempt_timeout_ms": 30000
+                            }
+                        }
+                    }
+                }
+            ]
         }
     }
 }
