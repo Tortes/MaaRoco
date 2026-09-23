@@ -21,6 +21,10 @@
 
 正式 Release 版本启动时会通过 GitHub Release 检查 MaaRoco stable 通道，并自动下载、安装更新后重启；debug、dev、CI 和预发布版本不会检查或拉取更新。正式版可在设置的版本更新页面关闭自动更新或手动检查版本。
 
+### 安装 Interception 驱动
+
+Windows 用户可以从本仓库下载并以管理员身份运行 [tools/install_interception.cmd](tools/install_interception.cmd)。脚本会从 Interception 官方 Release 下载并运行驱动安装程序；安装完成后请重启 Windows。
+
 ### 通过 WeGame 启动游戏
 
 1. 将控制器切换为“桌面端 - 游戏启动器”。
