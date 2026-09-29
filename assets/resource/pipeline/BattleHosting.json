@@ -46,12 +46,20 @@
             "BattleHostingChatVisible",
             "BattleHostingReportVisible"
         ],
-        "action": "DoNothing",
-        "post_delay": 250,
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "battle_shiny_guard"
+            }
+        },
+        "post_delay": 0,
         "next": [
             "BattleHostingMainLoop"
         ],
-        "pre_delay": 0
+        "pre_delay": 0,
+        "on_error": [
+            "BattleHostingShinyGuardStop"
+        ]
     },
     "BattleHostingMainLoop": {
         "recognition": "DirectHit",
@@ -349,8 +357,9 @@
         "rate_limit": 350,
         "timeout": 2000,
         "next": [
+            "BattleHostingShinyMarker",
             "BattleHostingBattleReady",
-            "BattleHostingCaptureControlVisible"
+            "BattleHostingCaptureReady"
         ],
         "pre_delay": 0,
         "on_error": [
@@ -569,5 +578,31 @@
             "BattleHostingStopInputFailure"
         ],
         "green_mask": true
+    },
+    "BattleHostingShinyGuardStop": {
+        "recognition": "DirectHit",
+        "action": "StopTask",
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "BattleHostingCaptureReady": {
+        "recognition": "And",
+        "all_of": [
+            "BattleHostingCaptureControlVisible"
+        ],
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "battle_shiny_guard"
+            }
+        },
+        "pre_delay": 0,
+        "post_delay": 0,
+        "next": [
+            "BattleHostingMainLoop"
+        ],
+        "on_error": [
+            "BattleHostingShinyGuardStop"
+        ]
     }
 }

@@ -1,9 +1,35 @@
 #include "actions.h"
 #include <MaaAgentServer/MaaAgentServerAPI.h>
 #include <iostream>
+#include <memory>
 
 namespace
 {
+// Five fresh frames, with 200 ms between capture starts. Fail closed on capture
+// or recognition errors; the pipeline routes both a hit and errors to StopTask.
+bool shiny_guard(MaaContext *ctx, const char *marker)
+{
+    auto tasker = MaaContextGetTasker(ctx);
+    auto controller = MaaTaskerGetController(tasker);
+    std::unique_ptr<MaaImageBuffer, decltype(&MaaImageBufferDestroy)> image(MaaImageBufferCreate(), MaaImageBufferDestroy);
+    for (int i = 0; i < 5; ++i)
+    {
+        const auto start = roco::Clock::now();
+        if (MaaTaskerStopping(tasker) ||
+            MaaControllerWait(controller, MaaControllerPostScreencap(controller)) != MaaStatus_Succeeded ||
+            !MaaControllerCachedImage(controller, image.get()))
+            return false;
+        auto id = MaaContextRunRecognition(ctx, marker, "{}", image.get());
+        MaaBool hit = false;
+        if (id == MaaInvalidId || !MaaTaskerGetRecognitionDetail(tasker, id, nullptr, nullptr, &hit,
+                                                               nullptr, nullptr, nullptr, nullptr) || hit)
+            return false;
+        if (i < 4)
+            std::this_thread::sleep_until(start + std::chrono::milliseconds(200));
+    }
+    return true;
+}
+
 MaaBool MAA_CALL action(MaaContext *ctx, MaaTaskId task_id, const char *, const char *name, const char *raw, MaaRecoId,
                         const MaaRect *, void *)
 {
@@ -11,6 +37,10 @@ MaaBool MAA_CALL action(MaaContext *ctx, MaaTaskId task_id, const char *, const 
     {
         auto p = roco::params(raw);
         std::string op(name);
+        if (op == "battle_shiny_guard")
+            return shiny_guard(ctx, "BattleHostingShinyMarker");
+        if (op == "flower_shiny_guard")
+            return shiny_guard(ctx, "FlowerSeedBattleShinyMarker");
         if (op == "launch_game_wait_and_run")
             return roco::launch(ctx, p);
         if (op == "target_pet_explore" || op == "yueya_xuexiong_explore")
@@ -77,7 +107,7 @@ int main(int argc, char **argv)
     std::string logs = "./debug";
     MaaGlobalSetOption(MaaGlobalOption_LogDir, logs.data(), logs.size());
     for (auto name : {"launch_game_wait_and_run", "battle_focused_key", "target_pet_explore", "yueya_xuexiong_explore",
-                      "yueya_xuexiong_aim_and_throw"})
+                      "yueya_xuexiong_aim_and_throw", "battle_shiny_guard", "flower_shiny_guard"})
         if (!MaaAgentServerRegisterCustomAction(name, action, nullptr))
             return 3;
     if (!MaaAgentServerRegisterCustomRecognition("yueya_xuexiong_blue", recognition, nullptr))

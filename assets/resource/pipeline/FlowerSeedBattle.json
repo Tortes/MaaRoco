@@ -105,8 +105,8 @@
         "timeout": -1,
         "next": [
             "FlowerSeedBattleShinyMarker",
-            "FlowerSeedBattleStep6CaptureMenu",
-            "FlowerSeedBattleRound1Skill"
+            "FlowerSeedBattleStepEndPrompt",
+            "FlowerSeedBattleBattleReady"
         ]
     },
     "FlowerSeedBattleSkillUiVisible": {
@@ -366,8 +366,7 @@
         "next": [
             "FlowerSeedBattleShinyMarker",
             "FlowerSeedBattleStepEndPrompt",
-            "FlowerSeedBattleStep6CaptureMenu",
-            "FlowerSeedBattleRound1Skill"
+            "FlowerSeedBattleBattleReady"
         ]
     },
     "FlowerSeedBattleExitResult": {
@@ -402,5 +401,36 @@
         "action": "StopTask",
         "pre_delay": 0,
         "post_delay": 0
+    },
+    "FlowerSeedBattleShinyGuardStop": {
+        "recognition": "DirectHit",
+        "action": "StopTask",
+        "pre_delay": 0,
+        "post_delay": 0
+    },
+    "FlowerSeedBattleBattleReady": {
+        "recognition": "Or",
+        "any_of": [
+            "FlowerSeedBattleSkillUiVisible",
+            "FlowerSeedBattleStep6CaptureMenu"
+        ],
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "flower_shiny_guard"
+            }
+        },
+        "pre_delay": 0,
+        "post_delay": 0,
+        "rate_limit": 300,
+        "timeout": -1,
+        "next": [
+            "FlowerSeedBattleShinyMarker",
+            "FlowerSeedBattleStep6CaptureMenu",
+            "FlowerSeedBattleRound1Skill"
+        ],
+        "on_error": [
+            "FlowerSeedBattleShinyGuardStop"
+        ]
     }
 }

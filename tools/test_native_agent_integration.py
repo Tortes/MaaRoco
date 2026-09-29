@@ -28,6 +28,8 @@ def main():
     from maa.controller import CustomController
     from maa.resource import Resource
     from maa.tasker import Tasker
+    from maa.custom_recognition import CustomRecognition
+    from maa.custom_action import CustomAction
     import numpy as np
     import cv2
 
@@ -36,6 +38,7 @@ def main():
             super().__init__()
             self.events = []
             self.fail_after_down = False
+            self.capture_times = []
             self.frame = np.zeros((720, 1280, 3), dtype=np.uint8)
             self.frame[310:410, 590:690] = (255, 0, 0)
 
@@ -44,6 +47,7 @@ def main():
         def start_app(self, intent): return False
         def stop_app(self, intent): return False
         def screencap(self):
+            self.capture_times.append(time.monotonic())
             if self.fail_after_down and self.events and self.events[-1] == "down":
                 return np.empty((0, 0, 3), dtype=np.uint8)
             return self.frame.copy()
@@ -105,6 +109,37 @@ def main():
                     assert job.done, f"{entry} hung"
                     assert job.succeeded == success, f"{entry}: unexpected result"
                     return job
+
+                class ShinySequence(CustomRecognition):
+                    def analyze(self, context, argv):
+                        samples.append(len(controller.capture_times))
+                        return (650, 120, 20, 20) if len(samples) == hit_at else None
+
+                class ContinueProbe(CustomAction):
+                    def run(self, context, argv):
+                        continued.append(True)
+                        return True
+
+                assert resource.register_custom_recognition("shiny_sequence", ShinySequence())
+                assert resource.register_custom_action("continue_probe", ContinueProbe())
+                assert resource.override_pipeline({"GuardContinued": action("continue_probe", {})})
+                for prefix, entry in (("BattleHosting", "BattleHostingBattleReady"),
+                                      ("BattleHosting", "BattleHostingCaptureReady"),
+                                      ("FlowerSeedBattle", "FlowerSeedBattleBattleReady")):
+                    assert resource.override_pipeline({
+                        prefix + "ShinyMarker": {"recognition": "Custom", "custom_recognition": "shiny_sequence"},
+                        entry: {"recognition": "DirectHit", "next": ["GuardContinued"]},
+                    })
+                    for hit_at in (0, 1, 2, 3, 4, 5):
+                        samples, continued = [], []
+                        controller.capture_times.clear()
+                        run(entry)
+                        assert len(samples) == (hit_at or 5), (entry, hit_at, samples)
+                        assert bool(continued) == (hit_at == 0), (entry, hit_at, continued)
+                        assert len(set(samples)) == len(samples), "Guard reused a screenshot"
+                        starts = [controller.capture_times[index - 1] for index in samples]
+                        assert all(b - a >= .185 for a, b in zip(starts, starts[1:])), starts
+                print("Shiny guards: five fresh frames, 200 ms cadence, early stop on hits 1-5 passed")
                 run("SyntheticBlue")
                 # Verify the replacement HSV/component code against OpenCV on
                 # varied colors, diagonally touching shapes and centroids.
