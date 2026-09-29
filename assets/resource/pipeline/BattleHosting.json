@@ -4,12 +4,15 @@
         "action": "DoNothing",
         "post_delay": 0,
         "rate_limit": 350,
-        "timeout": -1,
+        "timeout": 2000,
         "next": [
             "BattleHostingShinyMarker",
             "BattleHostingBattleReady"
         ],
-        "pre_delay": 0
+        "pre_delay": 0,
+        "on_error": [
+            "BattleHostingIdleCheck"
+        ]
     },
     "BattleHostingChatVisible": {
         "recognition": "TemplateMatch",
@@ -344,12 +347,15 @@
         "action": "DoNothing",
         "post_delay": 0,
         "rate_limit": 350,
-        "timeout": -1,
+        "timeout": 2000,
         "next": [
             "BattleHostingBattleReady",
             "BattleHostingCaptureControlVisible"
         ],
-        "pre_delay": 0
+        "pre_delay": 0,
+        "on_error": [
+            "BattleHostingIdleCheck"
+        ]
     },
     "BattleHostingResume": {
         "recognition": "DirectHit",
@@ -520,5 +526,48 @@
         "action": "StopTask",
         "pre_delay": 0,
         "post_delay": 0
+    },
+    "BattleHostingIdleCheck": {
+        "recognition": "DirectHit",
+        "action": "DoNothing",
+        "pre_delay": 0,
+        "post_delay": 0,
+        "timeout": 0,
+        "next": [
+            "BattleHostingShinyMarker",
+            "BattleHostingBattleReady",
+            "BattleHostingTouchMeteor",
+            "BattleHostingStart"
+        ]
+    },
+    "BattleHostingTouchMeteor": {
+        "recognition": "TemplateMatch",
+        "template": "battle_touch_meteor_icon.png",
+        "roi": [
+            740,
+            300,
+            220,
+            240
+        ],
+        "threshold": 0.9,
+        "method": 5,
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "battle_focused_key",
+                "custom_action_param": {
+                    "key": 70
+                }
+            }
+        },
+        "pre_delay": 0,
+        "post_delay": 0,
+        "next": [
+            "BattleHostingStart"
+        ],
+        "on_error": [
+            "BattleHostingStopInputFailure"
+        ],
+        "green_mask": true
     }
 }

@@ -78,7 +78,7 @@ bool relative_move(MaaController *, int dx, int dy)
 }
 bool driver_key(int vk)
 {
-    if (vk != 32 && vk != 49 && vk != 50 && vk != 51 && vk != 52 && vk != 87)
+    if (vk != 32 && vk != 49 && vk != 50 && vk != 51 && vk != 52 && vk != 70 && vk != 87)
         return false;
     std::lock_guard lock(input_mutex);
     Device keyboard;

@@ -61,6 +61,7 @@ int mac_key(int key)
     case 50: return 19; // 2
     case 51: return 20; // 3
     case 52: return 21; // 4
+    case 70: return 3; // F
     case 87: return 13; // W
     default: return -1;
     }
