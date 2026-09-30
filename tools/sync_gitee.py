@@ -319,8 +319,13 @@ def main():
         tag = safe_name(release["tag_name"])
         target = existing.get(tag)
         if target is None:
+            # Gitee requires a branch or commit SHA for target_commitish. Peel
+            # annotated tags so a release never accidentally targets main.
+            commit = subprocess.check_output(
+                ["git", "-C", str(Path(__file__).resolve().parent.parent), "rev-parse",
+                 "--verify", f"refs/tags/{tag}^{{commit}}"], text=True).strip()
             target = mirror.api("POST", "/releases", json={
-                "tag_name": tag, "target_commitish": tag, "name": release["name"] or tag,
+                "tag_name": tag, "target_commitish": commit, "name": release["name"] or tag,
                 "body": release_body(release), "prerelease": release["prerelease"]})
         targets[tag] = target
     report = {"releases": [], "errors": []}
