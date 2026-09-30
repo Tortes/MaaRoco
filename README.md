@@ -15,6 +15,8 @@
 
 ## 即刻开始
 
+下载：[GitHub Release](https://github.com/Tortes/MaaRoco/releases) · [Gitee 镜像 Release](https://gitee.com/tortes/maa-roco/releases)。Gitee 保留最新正式版和预览版的分卷安装包，请按对应 Release 附件中的 `GITEE_DOWNLOAD.md` 合并、校验后解压；历史版本提供 GitHub 原包链接。同步规则见 [Gitee 镜像说明](docs/gitee-sync.md)。
+
 使用官方 [MaaFramework v5.13.0](https://github.com/MaaXYZ/MaaFramework/releases/tag/v5.13.0) 的完整 Windows x86-64 运行库，版本及校验值记录在 `maaframework.lock.json`。需要提前安装 [Interception 驱动](https://github.com/oblitum/Interception)。瞄准所需的相对鼠标移动通过C++ Agent 直接调用 Interception 驱动 执行；连续丢球使用固定按住时长和固定间隔。
 
 前端默认关闭实时画面，空闲时不会持续截图；任务运行期间由任务流水线按需截图。按 `F11` 可启动或停止当前任务。

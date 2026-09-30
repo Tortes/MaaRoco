@@ -1,0 +1,97 @@
+name: Sync Gitee
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  release:
+    types: [published, edited]
+  # Releases created with GITHUB_TOKEN do not emit another workflow's release
+  # event. Wait for the build workflow so every binary has finished uploading.
+  workflow_run:
+    workflows: [install, macOS preview]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Only sync this release tag (empty: all published releases)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-gitee
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: >-
+      github.repository == 'Tortes/MaaRoco' &&
+      (github.event_name != 'workflow_run' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event != 'pull_request' &&
+         github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      # Always execute trusted code from main, including workflow_run events.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install sync dependency
+        run: python -m pip install 'requests>=2.32.4,<3'
+
+      - name: Test release splitting and resume behavior
+        run: python -m unittest discover -s tools -p 'test_sync_gitee.py'
+
+      - name: Mirror main and tags
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          import subprocess
+
+          token = os.environ['GITEE_TOKEN'].strip()
+          if not token:
+              raise SystemExit('Configure the GITEE_TOKEN repository secret first')
+          authorization = base64.b64encode(f'tortes:{token}'.encode()).decode()
+          print(f'::add-mask::{authorization}')
+          environment = dict(os.environ, GIT_TERMINAL_PROMPT='0', GIT_CONFIG_COUNT='1',
+                             GIT_CONFIG_KEY_0='http.https://gitee.com/.extraheader',
+                             GIT_CONFIG_VALUE_0=f'Authorization: Basic {authorization}')
+          subprocess.run(['git', 'push', '--atomic', 'https://gitee.com/tortes/maa-roco.git',
+                          'HEAD:refs/heads/main', 'refs/tags/*:refs/tags/*'],
+                         check=True, env=environment)
+          PY
+
+      - name: Mirror releases and verify attachments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          SELECTED_TAG: ${{ inputs.tag }}
+        run: |
+          args=(--cache-dir "$RUNNER_TEMP/gitee-release-sync")
+          if [[ -n "$SELECTED_TAG" ]]; then
+            args+=(--tag "$SELECTED_TAG")
+          fi
+          python -u tools/sync_gitee.py "${args[@]}"
+
+      - name: Save sync report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitee-sync-report
+          path: ${{ runner.temp }}/gitee-release-sync/sync-report.json
+          if-no-files-found: ignore
+          retention-days: 14
