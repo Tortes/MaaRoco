@@ -1,0 +1,4027 @@
+diff --git a/src-tauri/src/commands/app_config.rs b/src-tauri/src/commands/app_config.rs
+index 2c42e3c..037cdb9 100644
+--- a/src-tauri/src/commands/app_config.rs
++++ b/src-tauri/src/commands/app_config.rs
+@@ -121,6 +121,21 @@ impl AppConfigState {
+         let config_filename = make_config_filename(project_name.as_deref());
+         let config_path = data_dir.join("config").join(&config_filename);
+ 
++        // First launch after an MFA upgrade must migrate on the user's machine.
++        // Release archives omit config so an existing MXU configuration remains authoritative.
++        if !config_path.exists() {
++            if let Some(interface) = self.project_interface.lock().unwrap().as_ref() {
++                match super::maaroco_migration::migrate_legacy_config(data_dir, interface) {
++                    Ok(Some(config)) => {
++                        *self.config.lock().unwrap() = config;
++                        return;
++                    }
++                    Ok(None) => {}
++                    Err(error) => log::error!("MaaRoco MFA migration failed: {}", error),
++                }
++            }
++        }
++
+         if config_path.exists() {
+             match std::fs::read_to_string(&config_path) {
+                 Ok(content) => {
+diff --git a/src-tauri/src/commands/download.rs b/src-tauri/src/commands/download.rs
+index 3a41764..b1961c7 100644
+--- a/src-tauri/src/commands/download.rs
++++ b/src-tauri/src/commands/download.rs
+@@ -59,6 +59,144 @@ static DOWNLOAD_CANCELLED: AtomicBool = AtomicBool::new(false);
+ /// 当前下载的 session ID，用于区分不同的下载任务
+ static CURRENT_DOWNLOAD_SESSION: AtomicU64 = AtomicU64::new(0);
+ 
++const RELEASES_PER_PAGE: usize = 100;
++const MAX_STABLE_RELEASE_PAGES: usize = 10;
++
++// Keep publishing metadata local to the API response; callers still receive the
++// existing release DTO used by both the generic and MaaRoco update flows.
++#[derive(serde::Deserialize)]
++struct GitHubApiRelease {
++    #[serde(flatten)]
++    release: GitHubRelease,
++    draft: bool,
++    published_at: Option<String>,
++}
++
++impl GitHubApiRelease {
++    fn maaroco_stable_version(&self) -> Option<semver::Version> {
++        if self.draft
++            || self.release.prerelease
++            || self
++                .published_at
++                .as_ref()
++                .is_none_or(|published_at| published_at.trim().is_empty())
++        {
++            return None;
++        }
++
++        // Canonical vN.N.N tags exclude previews, build metadata and leading zeros.
++        // Versions below 1.0 are published MaaRoco releases as well.
++        let version = semver::Version::parse(self.release.tag_name.strip_prefix('v')?).ok()?;
++        if !version.pre.is_empty()
++            || !version.build.is_empty()
++            || self.release.tag_name != format!("v{}", version)
++        {
++            return None;
++        }
++
++        let asset_name = format!("MaaRoco-win-x86_64-{}.zip", self.release.tag_name);
++        self.release
++            .assets
++            .iter()
++            .any(|asset| {
++                asset.name == asset_name && !asset.browser_download_url.trim().is_empty()
++            })
++            .then_some(version)
++    }
++}
++
++fn retain_latest_stable_release(
++    best: &mut Option<(semver::Version, GitHubRelease)>,
++    releases: impl IntoIterator<Item = GitHubApiRelease>,
++) {
++    for release in releases {
++        let Some(version) = release.maaroco_stable_version() else {
++            continue;
++        };
++        if best.as_ref().is_none_or(|(current, _)| version > *current) {
++            *best = Some((version, release.release));
++        }
++    }
++}
++
++fn github_release_request(
++    client: &reqwest::Client,
++    url: &str,
++    github_pat: Option<&str>,
++) -> reqwest::RequestBuilder {
++    let mut request = client
++        .get(url)
++        .header(ACCEPT, "application/vnd.github.v3+json")
++        .header(USER_AGENT, "mxu");
++    if let Some(pat) = github_pat.filter(|pat| !pat.trim().is_empty()) {
++        request = request.header(AUTHORIZATION, format!("token {}", pat.trim()));
++    }
++    request
++}
++
++async fn get_latest_maaroco_release(
++    client: &reqwest::Client,
++    releases_url: &str,
++    github_pat: Option<&str>,
++) -> Result<Option<GitHubRelease>, String> {
++    // GitHub's latest endpoint excludes drafts and prereleases and remains cheap
++    // even when hundreds of preview releases precede a full release in the list.
++    let response = github_release_request(
++        client,
++        &format!("{}/latest", releases_url),
++        github_pat,
++    )
++    .send()
++    .await
++    .map_err(|e| format!("请求失败: {}", e))?;
++    if response.status().is_success() {
++        let release: GitHubApiRelease = response
++            .json()
++            .await
++            .map_err(|e| format!("解析 JSON 失败: {}", e))?;
++        if release.maaroco_stable_version().is_some() {
++            info!("找到最新正式 Release: {}", release.release.tag_name);
++            return Ok(Some(release.release));
++        }
++    } else if response.status() != reqwest::StatusCode::NOT_FOUND {
++        return Err(format!("GitHub API 错误: {}", response.status()));
++    }
++
++    // A release marked latest may use a preview tag or lack the Windows package.
++    // Search bounded pages for the highest eligible version rather than silently
++    // considering only GitHub's default first 30 releases.
++    let mut best = None;
++    for page in 1..=MAX_STABLE_RELEASE_PAGES {
++        let response = github_release_request(client, releases_url, github_pat)
++            .query(&[("per_page", RELEASES_PER_PAGE), ("page", page)])
++            .send()
++            .await
++            .map_err(|e| format!("请求失败: {}", e))?;
++        if !response.status().is_success() {
++            return Err(format!("GitHub API 错误: {}", response.status()));
++        }
++        let releases: Vec<GitHubApiRelease> = response
++            .json()
++            .await
++            .map_err(|e| format!("解析 JSON 失败: {}", e))?;
++        let is_last_page = releases.len() < RELEASES_PER_PAGE;
++        retain_latest_stable_release(&mut best, releases);
++        if is_last_page {
++            break;
++        }
++        if page == MAX_STABLE_RELEASE_PAGES {
++            warn!("正式 Release 查询达到分页上限: {}", page);
++        }
++    }
++    let release = best.map(|(_, release)| release);
++    if let Some(ref release) = release {
++        info!("找到匹配的正式 Release: {}", release.tag_name);
++    } else {
++        warn!("未找到带 Windows 安装包的正式 MaaRoco Release");
++    }
++    Ok(release)
++}
++
+ /// 根据版本号获取 GitHub Release URL
+ ///
+ /// 使用 GitHub API 获取指定版本的 Release 信息，支持使用 GitHub PAT 和代理
+@@ -99,19 +237,11 @@ pub async fn get_github_release_by_version(
+         .build()
+         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+ 
+-    let mut request = client
+-        .get(&url)
+-        .header(ACCEPT, "application/vnd.github.v3+json")
+-        .header(USER_AGENT, "mxu");
+-
+-    // 添加 PAT 认证（如果提供）
+-    if let Some(pat) = github_pat {
+-        if !pat.trim().is_empty() {
+-            request = request.header(AUTHORIZATION, format!("token {}", pat.trim()));
+-        }
++    if target_version == "__latest_stable__" {
++        return get_latest_maaroco_release(&client, &url, github_pat.as_deref()).await;
+     }
+ 
+-    let response = request
++    let response = github_release_request(&client, &url, github_pat.as_deref())
+         .send()
+         .await
+         .map_err(|e| format!("请求失败: {}", e))?;
+@@ -579,3 +709,151 @@ fn parse_content_disposition(header: &str) -> Option<String> {
+ 
+     None
+ }
++
++#[cfg(test)]
++mod release_tests {
++    use super::*;
++    use crate::commands::types::GitHubAsset;
++
++    fn release(tag: &str) -> GitHubApiRelease {
++        GitHubApiRelease {
++            release: GitHubRelease {
++                tag_name: tag.to_string(),
++                name: tag.to_string(),
++                body: None,
++                prerelease: false,
++                assets: vec![GitHubAsset {
++                    name: format!("MaaRoco-win-x86_64-{}.zip", tag),
++                    browser_download_url: format!(
++                        "https://github.com/MaaXYZ/MaaRoco/releases/download/{}/MaaRoco-win-x86_64-{}.zip",
++                        tag, tag
++                    ),
++                    size: 1024,
++                }],
++            },
++            draft: false,
++            published_at: Some("2026-10-01T12:00:00Z".to_string()),
++        }
++    }
++
++    #[test]
++    fn published_pre_1_0_release_is_eligible() {
++        assert_eq!(
++            release("v0.3.4").maaroco_stable_version(),
++            Some(semver::Version::new(0, 3, 4))
++        );
++    }
++
++    #[test]
++    fn drafts_and_unpublished_releases_are_excluded() {
++        let mut draft = release("v0.3.4");
++        draft.draft = true;
++        assert!(draft.maaroco_stable_version().is_none());
++
++        let mut unpublished = release("v0.3.4");
++        unpublished.published_at = None;
++        assert!(unpublished.maaroco_stable_version().is_none());
++        unpublished.published_at = Some(" ".to_string());
++        assert!(unpublished.maaroco_stable_version().is_none());
++    }
++
++    #[test]
++    fn prerelease_flag_and_noncanonical_tags_are_excluded() {
++        let mut prerelease = release("v0.3.4");
++        prerelease.release.prerelease = true;
++        assert!(prerelease.maaroco_stable_version().is_none());
++
++        for tag in [
++            "v0.3.4-beta.1",
++            "v0.3.4+build.1",
++            "v00.3.4",
++            "v0.03.4",
++            "v0.3.04",
++            "V0.3.4",
++            "0.3.4",
++            "v0.3",
++            "v0.3.4 ",
++            "main",
++        ] {
++            assert!(
++                release(tag).maaroco_stable_version().is_none(),
++                "unexpected eligible tag: {}",
++                tag
++            );
++        }
++    }
++
++    #[test]
++    fn release_requires_its_exact_windows_asset() {
++        let mut missing = release("v0.3.4");
++        missing.release.assets.clear();
++        assert!(missing.maaroco_stable_version().is_none());
++
++        for asset_name in [
++            "MaaRoco-win-x86_64-v0.3.3.zip",
++            "MaaRoco-linux-x86_64-v0.3.4.zip",
++            "MaaRoco-win-x86_64-v0.3.4-debug.zip",
++        ] {
++            let mut wrong_asset = release("v0.3.4");
++            wrong_asset.release.assets[0].name = asset_name.to_string();
++            assert!(wrong_asset.maaroco_stable_version().is_none());
++        }
++
++        let mut undownloadable = release("v0.3.4");
++        undownloadable.release.assets[0].browser_download_url.clear();
++        assert!(undownloadable.maaroco_stable_version().is_none());
++    }
++
++    #[test]
++    fn published_metadata_is_read_from_the_github_response() {
++        let response = serde_json::json!({
++            "tag_name": "v0.3.4",
++            "name": "MaaRoco v0.3.4",
++            "body": null,
++            "prerelease": false,
++            "draft": true,
++            "published_at": null,
++            "assets": [{
++                "name": "MaaRoco-win-x86_64-v0.3.4.zip",
++                "browser_download_url": "https://example.com/package.zip",
++                "size": 1024
++            }]
++        });
++        let draft: GitHubApiRelease = serde_json::from_value(response.clone()).unwrap();
++        assert!(draft.draft);
++        assert!(draft.published_at.is_none());
++        assert!(draft.maaroco_stable_version().is_none());
++
++        let mut published = response;
++        published["draft"] = serde_json::json!(false);
++        published["published_at"] = serde_json::json!("2026-10-01T12:00:00Z");
++        let published: GitHubApiRelease = serde_json::from_value(published).unwrap();
++        assert_eq!(
++            published.maaroco_stable_version(),
++            Some(semver::Version::new(0, 3, 4))
++        );
++    }
++
++    #[test]
++    fn later_pages_can_supply_a_stable_release_after_many_previews() {
++        let mut best = None;
++        let previews = (0..RELEASES_PER_PAGE).map(|_| {
++            let mut preview = release("v9.0.0");
++            preview.release.prerelease = true;
++            preview
++        });
++        retain_latest_stable_release(&mut best, previews);
++        assert!(best.is_none());
++
++        let mut draft = release("v9.0.0");
++        draft.draft = true;
++        let mut missing_package = release("v8.0.0");
++        missing_package.release.assets.clear();
++        retain_latest_stable_release(
++            &mut best,
++            [draft, missing_package, release("v0.3.4"), release("v0.3.9")],
++        );
++        retain_latest_stable_release(&mut best, [release("v0.3.5")]);
++        assert_eq!(best.unwrap().1.tag_name, "v0.3.9");
++    }
++}
+diff --git a/src-tauri/src/commands/maa_agent.rs b/src-tauri/src/commands/maa_agent.rs
+index d276381..d1258fd 100644
+--- a/src-tauri/src/commands/maa_agent.rs
++++ b/src-tauri/src/commands/maa_agent.rs
+@@ -163,7 +163,7 @@ impl AgentOutputBatcher {
+ }
+ 
+ /// 发送 Agent 输出事件（Tauri WebView + WebSocket 浏览器客户端）
+-fn emit_agent_output(app: &tauri::AppHandle, instance_id: &str, stream: &str, line: &str) {
++pub(super) fn emit_agent_output(app: &tauri::AppHandle, instance_id: &str, stream: &str, line: &str) {
+     let clean_line = strip_ansi_escapes(line);
+ 
+     // 广播到所有 WebSocket 客户端
+@@ -283,6 +283,33 @@ fn agent_spawn_hint_tag(error: &std::io::Error) -> Option<&'static str> {
+     None
+ }
+ 
++/// Bound the native startup handshake while retaining generic timeout settings.
++fn connection_timeout(timeout: i64, bounded_startup: bool) -> i64 {
++    if bounded_startup {
++        if timeout < 0 { 5_000 } else { timeout.min(5_000) }
++    } else {
++        timeout
++    }
++}
++
++#[cfg(test)]
++mod agent_timeout_tests {
++    use super::connection_timeout;
++
++    #[test]
++    fn native_handshake_is_bounded_without_shortening_explicit_short_timeouts() {
++        assert_eq!(connection_timeout(-1, true), 5_000);
++        assert_eq!(connection_timeout(20_000, true), 5_000);
++        assert_eq!(connection_timeout(500, true), 500);
++    }
++
++    #[test]
++    fn generic_agent_timeout_is_preserved() {
++        assert_eq!(connection_timeout(-1, false), -1);
++        assert_eq!(connection_timeout(20_000, false), 20_000);
++    }
++}
++
+ /// 启动单个 Agent 子进程并完成连接
+ async fn start_single_agent(
+     app: tauri::AppHandle,
+@@ -295,6 +322,7 @@ async fn start_single_agent(
+     controller: Controller,
+     tasker: Tasker,
+     pi_envs: Arc<HashMap<String, String>>,
++    bounded_startup: bool,
+ ) -> Result<(AgentClient, std::process::Child), String> {
+     info!("[agent#{}] Starting agent: {:?}", agent_index, agent);
+ 
+@@ -362,6 +390,11 @@ async fn start_single_agent(
+             .stdout(Stdio::piped())
+             .stderr(Stdio::piped());
+ 
++        #[cfg(windows)]
++        if let Some(path) = super::maaroco::agent_library_path() {
++            cmd.env("PATH", path);
++        }
++
+         // PI v2.5.0: 仅允许注入 PI_* 环境变量，避免覆盖宿主进程关键环境。
+         let mut injected_count = 0usize;
+         for (key, value) in pi_envs.iter() {
+@@ -485,7 +518,7 @@ async fn start_single_agent(
+ 
+         // 设置连接超时
+         let timeout = agent.timeout.unwrap_or(-1);
+-        if let Err(e) = client.set_timeout(timeout) {
++        if let Err(e) = client.set_timeout(connection_timeout(timeout, bounded_startup)) {
+             warn!("Failed to set timeout for agent #{}: {}", agent_index, e);
+         }
+ 
+@@ -500,6 +533,14 @@ async fn start_single_agent(
+ 
+         info!("[agent#{}] Connected successfully!", agent_index);
+ 
++        // Only the native-agent handshake is bounded. LaunchGame custom actions
++        // may legitimately take minutes, so restore the project's RPC timeout.
++        if bounded_startup {
++            if let Err(e) = client.set_timeout(timeout) {
++                warn!("Failed to restore timeout for agent #{}: {}", agent_index, e);
++            }
++        }
++
+         // 注册 Agent sink
+         if let Err(e) = client.register_sinks(resource, controller, tasker) {
+             error!("[agent#{}] Failed to register sinks: {}", agent_index, e);
+@@ -524,6 +565,40 @@ pub async fn start_tasks_impl(
+     pi_envs: Option<HashMap<String, String>>,
+     reset_state: bool,
+     controller_info: Option<ControllerInfo>,
++    auto_controller: bool,
++) -> Result<Vec<i64>, String> {
++    if auto_controller {
++        return super::maaroco::start_tasks(
++            app, maa_state, instance_id, tasks, agent_configs, cwd, tcp_compat_mode,
++            pi_envs, controller_info,
++        ).await;
++    }
++    {
++        let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
++        if instances.get(&instance_id).is_some_and(|instance| instance.maaroco_queue.active) {
++            return Err("MaaRoco task queue is already running".into());
++        }
++        if reset_state {
++            if let Some(instance) = instances.get_mut(&instance_id) {
++                instance.maaroco_queue = Default::default();
++            }
++        }
++    }
++    start_tasks_batch_impl(app, maa_state, instance_id, tasks, agent_configs, cwd,
++        tcp_compat_mode, pi_envs, reset_state, controller_info).await
++}
++
++pub(super) async fn start_tasks_batch_impl(
++    app: tauri::AppHandle,
++    maa_state: &Arc<MaaState>,
++    instance_id: String,
++    tasks: Vec<TaskConfig>,
++    agent_configs: Option<Vec<AgentConfig>>,
++    cwd: String,
++    tcp_compat_mode: bool,
++    pi_envs: Option<HashMap<String, String>>,
++    reset_state: bool,
++    controller_info: Option<ControllerInfo>,
+ ) -> Result<Vec<i64>, String> {
+     info!("start_tasks_impl called");
+ 
+@@ -532,7 +607,7 @@ pub async fn start_tasks_impl(
+     info!("agent_configs: {:?}", agent_configs);
+     info!("cwd: {}, tcp_compat_mode: {}", cwd, tcp_compat_mode);
+ 
+-    let (resource, controller, tasker) = {
++    let (resource, controller, tasker, bounded_startup) = {
+         debug!("[start_tasks] Acquiring instances lock...");
+         let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
+         debug!("[start_tasks] Instances lock acquired");
+@@ -613,7 +688,7 @@ pub async fn start_tasks_impl(
+         }
+ 
+         let t = instance.tasker.as_ref().unwrap().clone();
+-        (res, ctrl, t)
++        (res, ctrl, t, instance.maaroco_queue.active)
+     };
+     debug!("[start_tasks] Resource, controller and tasker acquired, proceeding...");
+ 
+@@ -656,6 +731,7 @@ pub async fn start_tasks_impl(
+                     ctrl_clone,
+                     tasker_clone,
+                     pi_envs_clone,
++                    bounded_startup,
+                 )
+                 .await
+                 {
+@@ -726,6 +802,11 @@ pub async fn start_tasks_impl(
+         let instance = instances
+             .get_mut(&instance_id)
+             .ok_or("Instance not found")?;
++        // Stop may have arrived while the agent was starting. Do not enqueue
++        // another game action after a queue cancellation.
++        if instance.maaroco_queue.active && instance.maaroco_queue.cancelled {
++            return Err(super::maaroco::QUEUE_CANCELLED.into());
++        }
+         if reset_state {
+             // 首批：重置任务运行状态
+             instance.task_ids.clear();
+@@ -816,6 +897,7 @@ pub async fn maa_start_tasks(
+     pi_envs: Option<HashMap<String, String>>,
+     reset_state: Option<bool>,
+     controller_info: Option<ControllerInfo>,
++    auto_controller: Option<bool>,
+ ) -> Result<Vec<i64>, String> {
+     start_tasks_impl(
+         app,
+@@ -828,6 +910,7 @@ pub async fn maa_start_tasks(
+         pi_envs,
+         reset_state.unwrap_or(true),
+         controller_info,
++        auto_controller.unwrap_or(false),
+     )
+     .await
+ }
+diff --git a/src-tauri/src/commands/maa_core.rs b/src-tauri/src/commands/maa_core.rs
+index c32d227..a0f314c 100644
+--- a/src-tauri/src/commands/maa_core.rs
++++ b/src-tauri/src/commands/maa_core.rs
+@@ -893,10 +893,10 @@ pub async fn connect_controller_impl(
+                         *screencap_method,
+                     )
+                     .bits(),
+-                    maa_framework::common::Win32InputMethod::from_bits_truncate(*mouse_method)
+-                        .bits(),
+-                    maa_framework::common::Win32InputMethod::from_bits_truncate(*keyboard_method)
+-                        .bits(),
++                    // Preserve methods added by the bundled MaaFramework even
++                    // if a future input method precedes its Rust enum update.
++                    maa_framework::common::Win32InputMethod::from_bits_retain(*mouse_method).bits(),
++                    maa_framework::common::Win32InputMethod::from_bits_retain(*keyboard_method).bits(),
+                 )
+                 .map_err(|e| e.to_string())?
+             }
+@@ -1316,6 +1316,15 @@ pub fn run_task_impl(
+     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
+     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+ 
++    if instance.maaroco_queue.active {
++        return Err("MaaRoco task queue is already running".into());
++    }
++    if instance.maaroco_queue.completion_sent {
++        instance.maaroco_queue = Default::default();
++        instance.task_run_state = Default::default();
++        instance.task_ids.clear();
++    }
++
+     let resource = instance.resource.as_ref().ok_or("Resource not loaded")?;
+     let controller = instance
+         .controller
+@@ -1436,13 +1445,23 @@ pub fn maa_get_task_status(
+ ) -> Result<TaskStatus, String> {
+     let instances = state.instances.lock().map_err(|e| e.to_string())?;
+     let instance = instances.get(&instance_id).ok_or("Instance not found")?;
+-    let tasker = instance.tasker.as_ref().ok_or("Tasker not created")?;
++    let cached_status = instance.task_run_state.status_for_task(task_id);
++    let tasker = match instance.tasker.as_ref() {
++        Some(tasker) => tasker,
++        None => return cached_status.ok_or_else(|| "Tasker not created".to_string()),
++    };
+ 
+     let status = tasker
+         .get_task_detail(task_id)
+         .map_err(|e| e.to_string())?
+-        .map(|d| d.status)
+-        .unwrap_or(MaaStatus::INVALID);
++        .map(|d| d.status);
++
++    // MaaRoco replaces the tasker for the next controller; completed IDs still
++    // belong to the same queue and retain their status in the runtime mapping.
++    if status.is_none() {
++        return Ok(cached_status.unwrap_or(TaskStatus::Failed));
++    }
++    let status = status.unwrap_or(MaaStatus::INVALID);
+ 
+     let result = match status {
+         MaaStatus::PENDING => TaskStatus::Pending,
+@@ -1459,10 +1478,14 @@ pub fn maa_get_task_status(
+ pub fn stop_task_impl(state: &MaaState, instance_id: &str) -> Result<(), String> {
+     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
+     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+-    let tasker = instance.tasker.as_ref().ok_or("Tasker not created")?;
++    let tasker = instance.tasker.clone();
++    if tasker.is_none() && !instance.maaroco_queue.active {
++        return Err("Tasker not created".into());
++    }
++    instance.maaroco_queue.cancel();
+ 
+     if instance.stop_in_progress {
+-        if !tasker.running() {
++        if !instance.maaroco_queue.active && !tasker.as_ref().is_some_and(|tasker| tasker.running()) {
+             instance.stop_in_progress = false;
+             instance.stop_started_at = None;
+             return Ok(());
+@@ -1490,11 +1513,16 @@ pub fn stop_task_impl(state: &MaaState, instance_id: &str) -> Result<(), String>
+         }
+         state.overall_status = Some("Failed".to_string());
+     }
++    // Posting takes the telemetry lock before the instance lock. Release this
++    // lock before cancellation telemetry to avoid blocking a simultaneous post.
++    drop(instances);
+ 
+     // 遥测：用户取消，以 cancelled 结束当前运行的 Transaction（幂等，仅首次生效）
+     super::telemetry::on_run_cancelled(instance_id);
+ 
+-    tasker.post_stop().map_err(|e| e.to_string())?;
++    if let Some(tasker) = tasker {
++        tasker.post_stop().map_err(|e| e.to_string())?;
++    }
+     Ok(())
+ }
+ 
+@@ -1545,7 +1573,7 @@ pub fn maa_is_running(state: State<Arc<MaaState>>, instance_id: String) -> Resul
+     let instances = state.instances.lock().map_err(|e| e.to_string())?;
+     let instance = instances.get(&instance_id).ok_or("Instance not found")?;
+ 
+-    Ok(instance.tasker.as_ref().is_some_and(|t| t.running()))
++    Ok(instance.maaroco_queue.is_running(instance.tasker.as_ref().is_some_and(|t| t.running())))
+ }
+ 
+ // ============================================================================
+diff --git a/src-tauri/src/commands/maaroco.rs b/src-tauri/src/commands/maaroco.rs
+new file mode 100644
+index 0000000..9b72914
+--- /dev/null
++++ b/src-tauri/src/commands/maaroco.rs
+@@ -0,0 +1,397 @@
++//! MaaRoco's Windows tasks use the desktop to launch, then a fresh game window.
++//! Submit one task at a time so that each tasker is bound to the correct controller.
++
++use std::collections::HashMap;
++use std::sync::Arc;
++use std::time::{Duration, Instant};
++
++use maa_framework::common::{MaaStatus, Win32InputMethod, Win32ScreencapMethod};
++use maa_framework::job::Job;
++use maa_framework::tasker::Tasker;
++use tauri::Manager;
++
++use super::types::{AgentConfig, ControllerConfig, ControllerInfo, MaaState, TaskConfig, Win32Window};
++use super::utils::{emit_state_changed, get_maafw_dir};
++
++pub const INTERCEPTION_INPUT: u64 = Win32InputMethod::INTERCEPTION.bits();
++pub(super) const QUEUE_CANCELLED: &str = "MaaRoco task queue was cancelled [[hint:maaroco_queue_cancelled]]";
++
++#[derive(Debug, Default)]
++pub struct MaarocoQueue {
++    pub active: bool,
++    pub cancelled: bool,
++    pub completion_sent: bool,
++}
++
++impl MaarocoQueue {
++    pub fn begin(&mut self) -> Result<(), String> {
++        if self.active {
++            return Err("MaaRoco task queue is already running".into());
++        }
++        self.active = true;
++        self.cancelled = false;
++        self.completion_sent = false;
++        Ok(())
++    }
++
++    pub fn cancel(&mut self) {
++        if self.active {
++            self.cancelled = true;
++        }
++    }
++
++    pub fn is_running(&self, tasker_running: bool) -> bool {
++        self.active || tasker_running
++    }
++
++    pub fn callback_can_complete(&self) -> bool {
++        !self.active && !self.completion_sent
++    }
++
++    fn begin_finish(&mut self) -> bool {
++        if self.completion_sent {
++            return false;
++        }
++        self.completion_sent = true;
++        true
++    }
++
++    fn finish_emitted(&mut self) {
++        self.active = false;
++    }
++}
++
++fn launch_task(task: &TaskConfig) -> bool {
++    task.task_name.as_deref() == Some("LaunchGame") || task.entry == "LaunchGameStart"
++}
++
++fn target_controller(windows: &[Win32Window], desktop: bool) -> Result<ControllerConfig, String> {
++    let window = windows
++        .iter()
++        .find(|window| {
++            window.handle != 0
++                && if desktop {
++                    window.class_name == "Progman"
++                } else {
++                    window.class_name == "UnrealWindow"
++                        && window.window_name.contains("洛克王国：世界")
++                }
++        })
++        .ok_or_else(|| {
++            if desktop {
++                "MaaRoco: Windows desktop window was not found [[hint:maaroco_desktop_window_missing]]".to_string()
++            } else {
++                "MaaRoco: game window was not found; run LaunchGame first [[hint:maaroco_game_window_missing]]".to_string()
++            }
++        })?;
++
++    Ok(ControllerConfig::Win32 {
++        handle: window.handle,
++        screencap_method: Win32ScreencapMethod::SCREEN_DC.bits(),
++        mouse_method: INTERCEPTION_INPUT,
++        keyboard_method: INTERCEPTION_INPUT,
++        display_short_side: Some(720),
++    })
++}
++
++fn ensure_queue_running(state: &MaaState, instance_id: &str) -> Result<(), String> {
++    let instances = state.instances.lock().map_err(|e| e.to_string())?;
++    let instance = instances.get(instance_id).ok_or("Instance not found")?;
++    if !instance.maaroco_queue.active || instance.maaroco_queue.cancelled {
++        return Err(QUEUE_CANCELLED.into());
++    }
++    Ok(())
++}
++
++async fn prepare_controller(
++    app: &tauri::AppHandle,
++    state: &Arc<MaaState>,
++    instance_id: &str,
++    task: &TaskConfig,
++) -> Result<(), String> {
++    ensure_queue_running(state, instance_id)?;
++    let windows = super::maa_core::find_win32_windows_impl(state.clone(), None, None).await?;
++    let config = target_controller(&windows, launch_task(task))?;
++
++    // Even an identical HWND may now belong to a newly started game process.
++    // Create a fresh controller instead of reusing the previous pool entry.
++    state.controller_pool.lock().map_err(|e| e.to_string())?.remove(&config);
++    ensure_queue_running(state, instance_id)?;
++    let app_for_callback = app.clone();
++    super::maa_core::connect_controller_impl(
++        state.clone(),
++        instance_id.to_owned(),
++        config,
++        Arc::new(move |message, details| {
++            super::utils::emit_callback_event(&app_for_callback, message, details);
++        }),
++    )
++    .await?;
++
++    let state = state.clone();
++    let instance_id_owned = instance_id.to_owned();
++    tokio::task::spawn_blocking(move || {
++        let deadline = Instant::now() + Duration::from_secs(30);
++        loop {
++            ensure_queue_running(&state, &instance_id_owned)?;
++            let connected = {
++                let instances = state.instances.lock().map_err(|e| e.to_string())?;
++                instances.get(&instance_id_owned)
++                    .and_then(|instance| instance.controller.as_ref())
++                    .is_some_and(|controller| controller.connected())
++            };
++            if connected {
++                return Ok::<(), String>(());
++            }
++            if Instant::now() >= deadline {
++                return Err("MaaRoco: controller connection timed out [[hint:maaroco_controller_connection_timeout]]".into());
++            }
++            std::thread::sleep(Duration::from_millis(50));
++        }
++    }).await.map_err(|e| e.to_string())??;
++    emit_state_changed(app, instance_id, "controller-connected");
++    Ok(())
++}
++
++async fn wait_for_task(tasker: Tasker, task_id: i64) -> Result<(), String> {
++    tokio::task::spawn_blocking(move || {
++        // get_task_detail hydrates every recognition and action in the task.
++        // Use the job's lightweight status wait for long battle/throw loops.
++        let status = Job::for_tasker(&tasker, task_id).wait();
++        while tasker.running() {
++            std::thread::sleep(Duration::from_millis(50));
++        }
++        if status == MaaStatus::SUCCEEDED {
++            Ok(())
++        } else {
++            Err(format!("MaaRoco task {} failed or was stopped", task_id))
++        }
++    }).await.map_err(|e| e.to_string())?
++}
++
++fn finish_queue(app: &tauri::AppHandle, state: &Arc<MaaState>, instance_id: &str, failed: bool) {
++    if let Err(error) = super::maa_agent::stop_agent_impl(state, instance_id) {
++        log::warn!("MaaRoco: failed to stop agent: {}", error);
++    }
++    let mut completed = false;
++    if let Ok(mut instances) = state.instances.lock() {
++        if let Some(instance) = instances.get_mut(instance_id) {
++            // Keep the queue active until its terminal notifications have been
++            // emitted, so a new run cannot overwrite the telemetry in between.
++            completed = instance.maaroco_queue.begin_finish();
++            let failed = failed || instance.maaroco_queue.cancelled;
++            for status in instance.task_run_state.statuses.values_mut() {
++                if status == "pending" || status == "running" {
++                    *status = "failed".into();
++                }
++            }
++            instance.task_run_state.overall_status = Some(if failed { "Failed" } else { "Succeeded" }.into());
++            instance.task_ids.clear();
++            instance.stop_in_progress = false;
++            instance.stop_started_at = None;
++        }
++    }
++    if completed {
++        super::telemetry::on_run_finished(instance_id);
++        emit_state_changed(app, instance_id, "tasks-completed");
++        if let Ok(mut instances) = state.instances.lock() {
++            if let Some(instance) = instances.get_mut(instance_id) {
++                if instance.maaroco_queue.completion_sent {
++                    instance.maaroco_queue.finish_emitted();
++                }
++            }
++        }
++    }
++}
++
++pub async fn start_tasks(
++    app: tauri::AppHandle,
++    state: &Arc<MaaState>,
++    instance_id: String,
++    tasks: Vec<TaskConfig>,
++    agent_configs: Option<Vec<AgentConfig>>,
++    cwd: String,
++    tcp_compat_mode: bool,
++    pi_envs: Option<HashMap<String, String>>,
++    controller_info: Option<ControllerInfo>,
++) -> Result<Vec<i64>, String> {
++    if !cfg!(windows) {
++        return Err("MaaRoco automatic controller selection requires Windows".into());
++    }
++    let app_config = app.try_state::<Arc<super::app_config::AppConfigState>>()
++        .ok_or("Project interface not loaded")?;
++    let is_maaroco = app_config.project_interface.lock().map_err(|e| e.to_string())?
++        .as_ref().and_then(|interface| interface.get("name"))
++        .and_then(|name| name.as_str()) == Some("MaaRoco");
++    if !is_maaroco {
++        return Err("Automatic task controllers are only available for MaaRoco".into());
++    }
++    if tasks.is_empty() {
++        return Err("MaaRoco task queue is empty".into());
++    }
++    {
++        let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
++        let instance = instances.get_mut(&instance_id).ok_or("Instance not found")?;
++        if instance.tasker.as_ref().is_some_and(|tasker| tasker.running()) {
++            return Err("Instance is already running".into());
++        }
++        if !instance.resource.as_ref().is_some_and(|resource| resource.loaded()) {
++            return Err("Resource not loaded".into());
++        }
++        instance.maaroco_queue.begin()?;
++        instance.task_ids.clear();
++        instance.task_run_state = Default::default();
++        instance.task_run_state.overall_status = Some("Running".into());
++        for task in &tasks {
++            if let Some(selected_id) = &task.selected_task_id {
++                instance.task_run_state.statuses.insert(selected_id.clone(), "pending".into());
++            }
++        }
++    }
++    let task_names = tasks.iter().map(|task| task.task_name.clone().unwrap_or_else(|| task.entry.clone())).collect::<Vec<_>>();
++    super::telemetry::on_run_start(&instance_id, &task_names, controller_info.as_ref());
++    emit_state_changed(&app, &instance_id, "task-started");
++
++    let first_result = async {
++        super::maa_agent::stop_agent_impl(state, &instance_id)?;
++        prepare_controller(&app, state, &instance_id, &tasks[0]).await?;
++        ensure_queue_running(state, &instance_id)?;
++        super::maa_agent::start_tasks_batch_impl(
++            app.clone(), state, instance_id.clone(), vec![tasks[0].clone()],
++            agent_configs.clone(), cwd.clone(), tcp_compat_mode, pi_envs.clone(), false,
++            controller_info.clone(),
++        ).await
++    }.await;
++    let first_ids = match first_result {
++        Ok(ids) if ids.len() == 1 => ids,
++        Ok(_) => {
++            finish_queue(&app, state, &instance_id, true);
++            return Err("MaaRoco: failed to submit first task".into());
++        }
++        Err(error) => {
++            finish_queue(&app, state, &instance_id, true);
++            return Err(error);
++        }
++    };
++    let state = state.clone();
++    let initial_id = first_ids[0];
++    tauri::async_runtime::spawn(async move {
++        let mut result = async {
++            let mut task_id = initial_id;
++            for index in 0..tasks.len() {
++                let tasker = {
++                    let instances = state.instances.lock().map_err(|e| e.to_string())?;
++                    instances.get(&instance_id).and_then(|instance| instance.tasker.clone())
++                        .ok_or("Tasker not created")?
++                };
++                wait_for_task(tasker, task_id).await?;
++                ensure_queue_running(&state, &instance_id)?;
++                if let Some(next) = tasks.get(index + 1) {
++                    super::maa_agent::stop_agent_impl(&state, &instance_id)?;
++                    prepare_controller(&app, &state, &instance_id, next).await?;
++                    ensure_queue_running(&state, &instance_id)?;
++                    let ids = super::maa_agent::start_tasks_batch_impl(
++                        app.clone(), &state, instance_id.clone(), vec![next.clone()],
++                        agent_configs.clone(), cwd.clone(), tcp_compat_mode, pi_envs.clone(),
++                        false, controller_info.clone(),
++                    ).await?;
++                    task_id = *ids.first().ok_or("MaaRoco: failed to submit task")?;
++                }
++            }
++            Ok::<(), String>(())
++        }.await;
++        if result.is_err() {
++            let cancelled = state.instances.lock().ok()
++                .and_then(|instances| instances.get(&instance_id).map(|instance| instance.maaroco_queue.cancelled))
++                .unwrap_or(false);
++            if cancelled {
++                result = Err(QUEUE_CANCELLED.into());
++            }
++        }
++        if let Err(error) = &result {
++            log::warn!("MaaRoco queue finished with error: {}", error);
++            super::maa_agent::emit_agent_output(&app, &instance_id, "stderr", error);
++        }
++        finish_queue(&app, &state, &instance_id, result.is_err());
++    });
++    Ok(first_ids)
++}
++
++/// Native agents use the same MaaFramework DLLs as MXU, without .NET runtimes.
++pub fn agent_library_path() -> Option<std::ffi::OsString> {
++    let maafw = get_maafw_dir().ok()?;
++    let mut paths = vec![maafw];
++    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
++    std::env::join_paths(paths).ok()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn task(entry: &str, task_name: Option<&str>) -> TaskConfig {
++        TaskConfig { entry: entry.into(), pipeline_override: "{}".into(), selected_task_id: None,
++            task_name: task_name.map(str::to_owned), options: None }
++    }
++
++    fn window(handle: u64, class: &str, title: &str) -> Win32Window {
++        Win32Window { handle, class_name: class.into(), window_name: title.into() }
++    }
++
++    #[test]
++    fn launching_uses_desktop_without_requiring_game() {
++        assert!(launch_task(&task("LaunchGameStart", None)));
++        assert!(launch_task(&task("DifferentEntry", Some("LaunchGame"))));
++        let config = target_controller(&[window(42, "Progman", "Program Manager")], true).unwrap();
++        assert_eq!(config, ControllerConfig::Win32 { handle: 42, screencap_method: 32,
++            mouse_method: 512, keyboard_method: 512, display_short_side: Some(720) });
++    }
++
++    #[test]
++    fn game_tasks_reject_desktop_other_games_and_null_windows() {
++        assert!(!launch_task(&task("BattleHostingStart", Some("BattleHosting"))));
++        let windows = vec![window(1, "Progman", "Program Manager"), window(2, "UnrealWindow", "Other Game"),
++            window(0, "UnrealWindow", "洛克王国：世界"), window(3, "UnrealWindow", "洛克王国：世界")];
++        assert!(matches!(target_controller(&windows, false).unwrap(), ControllerConfig::Win32 {handle: 3, ..}));
++        assert!(target_controller(&windows[..3], false).is_err());
++    }
++
++    #[test]
++    fn refreshed_game_handle_is_used_for_next_task() {
++        let before = target_controller(&[window(10, "UnrealWindow", "洛克王国：世界")], false).unwrap();
++        let after = target_controller(&[window(20, "UnrealWindow", "洛克王国：世界")], false).unwrap();
++        assert_ne!(before, after);
++    }
++
++    #[test]
++    fn cancelled_queue_cannot_be_replaced_before_worker_finishes() {
++        let mut queue = MaarocoQueue::default();
++        queue.begin().unwrap();
++        queue.cancel();
++        assert!(queue.active && queue.cancelled);
++        assert!(queue.begin().is_err());
++        assert!(queue.begin_finish());
++        assert!(queue.begin().is_err());
++        queue.finish_emitted();
++        queue.begin().unwrap();
++        assert!(!queue.cancelled);
++    }
++
++    #[test]
++    fn controller_transitions_keep_queue_running_and_delay_completion() {
++        let mut queue = MaarocoQueue::default();
++        assert!(!queue.is_running(false));
++        assert!(queue.callback_can_complete());
++        queue.begin().unwrap();
++        assert!(queue.is_running(false));
++        assert!(!queue.callback_can_complete());
++        queue.cancel();
++        assert!(queue.is_running(false));
++        assert!(queue.begin_finish());
++        assert!(queue.is_running(false));
++        queue.finish_emitted();
++        assert!(!queue.is_running(false));
++        assert!(!queue.callback_can_complete());
++        assert!(!queue.begin_finish());
++    }
++}
+diff --git a/src-tauri/src/commands/maaroco_migration.rs b/src-tauri/src/commands/maaroco_migration.rs
+new file mode 100644
+index 0000000..32a5daa
+--- /dev/null
++++ b/src-tauri/src/commands/maaroco_migration.rs
+@@ -0,0 +1,715 @@
++//! First-launch migration of portable MaaRoco MFAAvalonia installations.
++//!
++//! Keep the original files untouched, back up their exact bytes before writing
++//! MXU config, and never replace an existing MXU file. The Python installer uses
++//! the same field mapping in tools/migrate_mxu_config.py.
++
++use serde_json::{json, Map, Value};
++use sha2::{Digest, Sha256};
++use std::{
++    collections::{BTreeMap, BTreeSet},
++    fs::{self, OpenOptions},
++    io::{ErrorKind, Write},
++    path::{Path, PathBuf},
++};
++
++#[derive(Default)]
++struct Report {
++    warnings: Vec<String>,
++    timers: Vec<Value>,
++    unmapped_fields: BTreeMap<String, Vec<String>>,
++}
++
++fn items(value: &Value) -> Vec<Value> {
++    match value {
++        Value::Null => Vec::new(),
++        Value::Array(values) => values.clone(),
++        other => vec![other.clone()],
++    }
++}
++
++fn boolean(value: &Value) -> bool {
++    match value {
++        Value::Bool(value) => *value,
++        Value::String(value) => value.eq_ignore_ascii_case("true"),
++        _ => false,
++    }
++}
++
++fn text(value: &Value) -> String {
++    match value {
++        Value::Null => String::new(),
++        Value::String(value) => value.clone(),
++        value => value.to_string(),
++    }
++}
++
++fn array(value: &Value) -> &[Value] {
++    value.as_array().map(Vec::as_slice).unwrap_or(&[])
++}
++
++/// MFA writes ordinary JSON, but user-edited configs may contain JSONC.
++/// This scanner preserves comment-like characters and escaped quotes in strings.
++fn parse_config(bytes: &[u8]) -> Result<Value, String> {
++    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
++    let mut stripped = Vec::with_capacity(bytes.len());
++    let (mut index, mut in_string, mut escaped) = (0, false, false);
++    while index < bytes.len() {
++        let byte = bytes[index];
++        if in_string {
++            stripped.push(byte);
++            if escaped {
++                escaped = false;
++            } else if byte == b'\\' {
++                escaped = true;
++            } else if byte == b'"' {
++                in_string = false;
++            }
++        } else if byte == b'"' {
++            in_string = true;
++            stripped.push(byte);
++        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'/') {
++            index += 2;
++            while index < bytes.len() && !matches!(bytes[index], b'\r' | b'\n') {
++                index += 1;
++            }
++            stripped.push(b' ');
++            continue;
++        } else if byte == b'/' && bytes.get(index + 1) == Some(&b'*') {
++            index += 2;
++            while index + 1 < bytes.len() && &bytes[index..index + 2] != b"*/" {
++                index += 1;
++            }
++            if index + 1 >= bytes.len() {
++                return Err("Unterminated JSONC comment".to_string());
++            }
++            index += 2;
++            stripped.push(b' ');
++            continue;
++        } else {
++            stripped.push(byte);
++        }
++        index += 1;
++    }
++    let mut cleaned = Vec::with_capacity(stripped.len());
++    in_string = false;
++    escaped = false;
++    for (index, byte) in stripped.iter().copied().enumerate() {
++        if in_string {
++            cleaned.push(byte);
++            if escaped {
++                escaped = false;
++            } else if byte == b'\\' {
++                escaped = true;
++            } else if byte == b'"' {
++                in_string = false;
++            }
++        } else if byte == b'"' {
++            in_string = true;
++            cleaned.push(byte);
++        } else if byte != b','
++            || !stripped[index + 1..]
++                .iter()
++                .copied()
++                .find(|byte| !byte.is_ascii_whitespace())
++                .is_some_and(|byte| matches!(byte, b'}' | b']'))
++        {
++            cleaned.push(byte);
++        }
++    }
++    let value: Value = serde_json::from_slice(&cleaned).map_err(|error| error.to_string())?;
++    if !value.is_object() {
++        return Err("Expected a configuration object".to_string());
++    }
++    Ok(value)
++}
++
++fn default_option(definition: &Value) -> Value {
++    let kind = definition["type"].as_str().unwrap_or("select");
++    let cases = array(&definition["cases"]);
++    let default = definition
++        .get("default_case")
++        .cloned()
++        .unwrap_or_else(|| cases.first().map(|case| case["name"].clone()).unwrap_or(json!("")));
++    match kind {
++        "input" | "hotkey" => {
++            let values: Map<String, Value> = array(&definition["inputs"])
++                .iter()
++                .filter_map(|item| Some((item["name"].as_str()?.to_string(), json!(text(&item["default"])))))
++                .collect();
++            json!({"type": kind, "values": values})
++        }
++        "checkbox" => json!({"type": "checkbox", "caseNames": items(&definition["default_case"])}),
++        "switch" => json!({"type": "switch", "value": matches!(default.as_str(), Some("Yes" | "yes" | "Y" | "y"))}),
++        _ => json!({"type": "select", "caseName": default}),
++    }
++}
++
++fn option_defaults(names: &Value, definitions: &Value) -> Map<String, Value> {
++    fn visit(name: &str, definitions: &Value, result: &mut Map<String, Value>) {
++        if result.contains_key(name) {
++            return;
++        }
++        let Some(definition) = definitions.get(name) else {
++            return;
++        };
++        result.insert(name.to_string(), default_option(definition));
++        for case in array(&definition["cases"]) {
++            for child in items(&case["option"]) {
++                if let Some(child) = child.as_str() {
++                    visit(child, definitions, result);
++                }
++            }
++        }
++    }
++    let mut result = Map::new();
++    for name in items(names) {
++        if let Some(name) = name.as_str() {
++            visit(name, definitions, &mut result);
++        }
++    }
++    result
++}
++
++fn convert_options(saved: &Value, definitions: &Value, report: &mut Report, context: &str) -> Map<String, Value> {
++    let mut result = Map::new();
++    for item in items(saved) {
++        let item = if item.is_string() { json!({"name": item}) } else { item };
++        let Some(name) = item["name"].as_str() else {
++            report.warnings.push(format!("{context}: invalid option retained in MFA backup"));
++            continue;
++        };
++        if let Some(definition) = definitions.get(name) {
++            let mut value = default_option(definition);
++            let kind = value["type"].as_str().unwrap_or("select").to_string();
++            let cases = array(&definition["cases"]);
++            match kind.as_str() {
++                "input" | "hotkey" => {
++                    if let Some(data) = item["data"].as_object() {
++                        let inputs = value["values"].as_object_mut().unwrap();
++                        for (key, raw) in data {
++                            if inputs.contains_key(key) {
++                                inputs.insert(key.clone(), json!(text(raw)));
++                            } else {
++                                report.warnings.push(format!("{context}/{name}: unknown input {key:?} retained in MFA backup"));
++                            }
++                        }
++                    }
++                }
++                "checkbox" if !item["selected_cases"].is_null() => {
++                    let mut selected = Vec::new();
++                    for case in items(&item["selected_cases"]) {
++                        if cases.iter().any(|definition| definition["name"] == case) {
++                            if !selected.contains(&case) {
++                                selected.push(case);
++                            }
++                        } else {
++                            report.warnings.push(format!("{context}/{name}: unknown checkbox case retained in MFA backup"));
++                        }
++                    }
++                    value["caseNames"] = Value::Array(selected);
++                }
++                "select" | "switch" if !item["index"].is_null() => {
++                    if let Some(case) = item["index"].as_u64().and_then(|index| cases.get(index as usize)) {
++                        if kind == "select" {
++                            value["caseName"] = case["name"].clone();
++                        } else {
++                            value["value"] = json!(matches!(case["name"].as_str(), Some("Yes" | "yes" | "Y" | "y")));
++                        }
++                    } else {
++                        report.warnings.push(format!("{context}/{name}: invalid index retained in MFA backup; using interface default"));
++                    }
++                }
++                _ => {}
++            }
++            result.insert(name.to_string(), value);
++        } else {
++            report.warnings.push(format!("{context}: unknown option {name:?} retained in MFA backup"));
++        }
++        result.extend(convert_options(&item["sub_options"], definitions, report, context));
++    }
++    result
++}
++
++fn convert_tasks(saved: &Value, interface: &Value, report: &mut Report, identifier: &str) -> Vec<Value> {
++    let mut result = Vec::new();
++    for (index, item) in items(saved).iter().enumerate() {
++        let Some(name) = item["name"].as_str() else {
++            report.warnings.push(format!("{identifier}: invalid task retained in MFA backup"));
++            continue;
++        };
++        let Some(definition) = array(&interface["task"]).iter().find(|definition| definition["name"] == name) else {
++            report.warnings.push(format!("{identifier}: unsupported task {name:?} retained in MFA backup"));
++            continue;
++        };
++        let mut options = option_defaults(&definition["option"], &interface["option"]);
++        options.extend(convert_options(&item["option"], &interface["option"], report, &format!("{identifier}/{name}")));
++        let mut task = json!({"id": format!("{identifier}-task-{index}"), "taskName": name,
++            "enabled": boolean(&item["default_check"]), "optionValues": options, "expanded": false});
++        if let Some(custom_name) = item["display_name_override"].as_str().filter(|name| !name.is_empty()) {
++            task["customName"] = json!(custom_name);
++        }
++        for field in ["remark", "advanced", "pipeline_override", "repeat_count"] {
++            if item.get(field).is_some_and(|value| !value.is_null() && value != &json!(false) && value != &json!([]) && value != &json!({})) {
++                report.warnings.push(format!("{identifier}/{name}: {field} retained in MFA backup"));
++            }
++        }
++        result.push(task);
++    }
++    result
++}
++
++fn convert_instance(identifier: &str, saved: &Value, interface: &Value, report: &mut Report) -> Value {
++    let mode = if identifier == "quick-tasks" || saved["MaaRoco.TaskMode"] == "quick" { "single" } else { "queue" };
++    let mut name = saved["InstanceName"].as_str().filter(|name| !name.is_empty()).unwrap_or_else(|| {
++        if mode == "single" { "单任务" } else if identifier == "default" { "任务队列" } else { identifier }
++    });
++    if identifier == "default" && matches!(name, "default" | "Default" | "配置 1" | "配置1" | "Config 1") {
++        name = "任务队列";
++    }
++    let resource = saved["Resource"].as_str().filter(|name| !name.is_empty())
++        .or_else(|| array(&interface["resource"]).first().and_then(|resource| resource["name"].as_str()))
++        .unwrap_or("default");
++    if !array(&interface["resource"]).iter().any(|item| item["name"] == resource) {
++        report.warnings.push(format!("{identifier}: custom resource {resource:?} retained; resource definition must remain available"));
++    }
++    let window = saved["DesktopWindowName"].as_str().filter(|name| {
++        !name.is_empty() && !matches!(*name, "Program Manager" | "程序管理器") && saved["DesktopWindowClassName"] != "Progman"
++    }).unwrap_or("洛克王国：世界");
++    let mut instance = json!({"id": format!("mfa-{identifier}"), "name": name, "maarocoMode": mode,
++        "controllerName": "Win32-Interception", "resourceName": resource,
++        "savedDevice": {"windowName": window}, "tasks": convert_tasks(&saved["TaskItems"], interface, report, identifier)});
++    if let Some(path) = saved["ConnectedProgramPath"].as_str().filter(|path| !path.is_empty()) {
++        instance["savedDevice"]["connectedProgramPath"] = json!(path);
++    }
++    for key in ["ResourceOptionItems", "ControllerOptionItems", "BeforeTask", "AfterTask", "GlobalOptionItems"] {
++        if saved.get(key).is_some_and(|value| !value.is_null() && value != &json!({}) && value != &json!([])) {
++            report.warnings.push(format!("{identifier}: {key} retained in MFA backup (MXU has no matching per-instance field)"));
++        }
++    }
++    let mapped = ["InstanceName", "Resource", "TaskItems", "CurrentTasks", "MaaRoco.TaskMode",
++        "DesktopWindowName", "DesktopWindowClassName", "ConnectedProgramPath", "CurrentControllerName",
++        "CurrentController", "Win32ControlMouseType", "Win32ControlKeyboardType", "Win32ControlScreenCapType",
++        "UI.LiveView.EnableLiveView", "MaaRoco.TaskModesInitialized", "MaaRoco.LauncherTabInitialized"];
++    if let Some(object) = saved.as_object() {
++        let unmapped: Vec<String> = object.keys().filter(|key| !mapped.contains(&key.as_str())).cloned().collect();
++        if !unmapped.is_empty() {
++            report.unmapped_fields.insert(identifier.to_string(), unmapped);
++        }
++    }
++    instance
++}
++
++fn timer_number(key: &str) -> Option<u32> {
++    let remainder = key.strip_prefix("Timer.Timer")?;
++    let digits: String = remainder.chars().take_while(char::is_ascii_digit).collect();
++    let suffix = &remainder[digits.len()..];
++    if !suffix.is_empty() && suffix != "Time" && !suffix.starts_with('.') {
++        return None;
++    }
++    digits.parse().ok()
++}
++
++fn parse_time(value: &Value) -> Option<String> {
++    let parts: Vec<&str> = value.as_str()?.split(':').collect();
++    if !(parts.len() == 2 || parts.len() == 3 && parts[2] == "00") {
++        return None;
++    }
++    if parts[0].len() > 2 || parts[1].len() > 2 {
++        return None;
++    }
++    let hour: u8 = parts[0].parse().ok()?;
++    let minute: u8 = parts[1].parse().ok()?;
++    (hour < 24 && minute < 60).then(|| format!("{hour:02}:{minute:02}"))
++}
++
++fn migrate_timers(global: &Value, instances: &mut [Value], report: &mut Report) {
++    let Some(global) = global.as_object() else { return };
++    let numbers: BTreeSet<u32> = global.keys().filter_map(|key| timer_number(key)).collect();
++    for number in numbers {
++        let prefix = format!("Timer.Timer{number}");
++        let raw: Map<String, Value> = global.iter().filter(|(key, _)| {
++            *key == &prefix || *key == &format!("{prefix}Time") || key.starts_with(&format!("{prefix}."))
++        }).map(|(key, value)| (key.clone(), value.clone())).collect();
++        let get = |suffix: &str| raw.get(&format!("{prefix}{suffix}")).cloned().unwrap_or(Value::Null);
++        let enabled = boolean(&get(""));
++        let mut entry = json!({"timer": number, "source": raw, "status": "retained"});
++        if !enabled && get("Time").is_null() {
++            entry["reason"] = json!("Unused timer");
++            report.timers.push(entry);
++            continue;
++        }
++        let target = get(".Config").as_str().map(|identifier| format!("mfa-{identifier}"));
++        let target_index = instances.iter().position(|instance| Some(text(&instance["id"])) == target);
++        let schedule_text = get(".Schedule").as_str().filter(|schedule| !schedule.is_empty()).unwrap_or("0||").to_string();
++        let schedule: Vec<&str> = schedule_text.split('|').collect();
++        let time = parse_time(&get("Time"));
++        let mut reason = if target_index.is_none() {
++            Some("Timer target is missing or implicit")
++        } else if !get(".Action").is_null() && text(&get(".Action")) != "0" {
++            Some("MXU schedule policies cannot stop tasks")
++        } else if boolean(&get(".StopConnectedProcess")) || boolean(&get(".StopMFA")) {
++            Some("MXU schedule policies cannot stop a process or MFA")
++        } else if time.is_none() {
++            Some("Invalid or missing start time")
++        } else if !matches!(schedule[0], "0" | "1") {
++            Some("Monthly or unknown timer schedule is unsupported")
++        } else { None };
++        let mut days: Vec<u8> = (0..7).collect();
++        if reason.is_none() && schedule[0] == "1" {
++            let tokens: Vec<&str> = schedule.get(1).unwrap_or(&"").split(',').collect();
++            let parsed: Option<BTreeSet<u8>> = tokens.iter().map(|token| {
++                token.parse::<u8>().ok().filter(|day| *day < 7)
++            }).collect();
++            if let Some(parsed) = parsed.filter(|days| !days.is_empty()) {
++                days = parsed.into_iter().collect();
++            } else {
++                reason = Some("Invalid or empty weekly schedule");
++            }
++        }
++        if let Some(reason) = reason {
++            entry["reason"] = json!(reason);
++            report.warnings.push(format!("Timer {number}: {reason}; original timer retained in MFA backup"));
++        } else {
++            let instance = &mut instances[target_index.unwrap()];
++            if !instance["schedulePolicies"].is_array() {
++                instance["schedulePolicies"] = json!([]);
++            }
++            instance["schedulePolicies"].as_array_mut().unwrap().push(json!({
++                "id": format!("mfa-timer-{number}"), "name": format!("MFA 定时任务 {number}"),
++                "enabled": enabled, "weekdays": days, "times": [time.unwrap()]
++            }));
++            entry["status"] = json!("migrated");
++        }
++        report.timers.push(entry);
++    }
++}
++
++fn stable_version(version: &str) -> bool {
++    let parts: Vec<&str> = version.strip_prefix('v').unwrap_or(version).split('.').collect();
++    parts.len() == 3 && parts.iter().all(|part| !part.is_empty() && part.chars().all(|character| character.is_ascii_digit()))
++}
++
++fn build_config(saved: &BTreeMap<String, Value>, settings: &Value, global: &Value, interface: &Value, report: &mut Report) -> Value {
++    let empty = json!({});
++    let queue_saved = saved.get("default").unwrap_or(settings);
++    let queue = convert_instance("default", queue_saved, interface, report);
++    let mut single = convert_instance("quick-tasks", saved.get("quick-tasks").unwrap_or(&empty), interface, report);
++    let options_by_name = |tasks: &Value| -> BTreeMap<String, Value> {
++        array(tasks).iter().filter_map(|task| Some((task["taskName"].as_str()?.to_string(), task["optionValues"].clone()))).collect()
++    };
++    let queue_options = options_by_name(&queue["tasks"]);
++    let launcher_tasks = convert_tasks(&saved.get("launch-game").unwrap_or(&empty)["TaskItems"], interface, report, "launch-game");
++    let launcher_options = options_by_name(&Value::Array(launcher_tasks));
++    let single_tasks: BTreeMap<String, Value> = array(&single["tasks"]).iter()
++        .filter_map(|task| Some((task["taskName"].as_str()?.to_string(), task.clone()))).collect();
++    let mut tasks = Vec::new();
++    for (index, definition) in array(&interface["task"]).iter().enumerate() {
++        let Some(name) = definition["name"].as_str() else { continue };
++        let mut task = if let Some(task) = single_tasks.get(name) {
++            task.clone()
++        } else {
++            let mut options = option_defaults(&definition["option"], &interface["option"]);
++            if let Some(saved_options) = launcher_options.get(name).or_else(|| queue_options.get(name)).and_then(Value::as_object) {
++                options.extend(saved_options.clone());
++            }
++            json!({"taskName": name, "enabled": boolean(&definition["default_check"]), "optionValues": options, "expanded": false})
++        };
++        task["id"] = json!(format!("quick-tasks-task-{index}"));
++        tasks.push(task);
++    }
++    single["tasks"] = Value::Array(tasks);
++    if !saved.contains_key("quick-tasks") {
++        single["resourceName"] = queue["resourceName"].clone();
++        single["savedDevice"] = queue["savedDevice"].clone();
++    }
++    let mut instances = vec![single, queue];
++    let mut ordered: Vec<String> = ["Instances.Order", "Instances.List"].iter()
++        .flat_map(|key| global[key].as_str().unwrap_or("").split(',').map(str::to_string)).collect();
++    ordered.extend(saved.keys().cloned());
++    let mut seen = BTreeSet::from(["default".to_string(), "quick-tasks".to_string()]);
++    for identifier in ordered {
++        if seen.insert(identifier.clone()) {
++            if let Some(value) = saved.get(&identifier) {
++                instances.push(convert_instance(&identifier, value, interface, report));
++            }
++        }
++    }
++    migrate_timers(global, &mut instances, report);
++    let language = settings["CurrentLanguage"].as_str().filter(|language| matches!(*language,
++        "system" | "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "ko-KR")).unwrap_or("zh-CN");
++    let active = format!("mfa-{}", global["Instances.LastActive"].as_str().unwrap_or("quick-tasks"));
++    let active = if instances.iter().any(|instance| instance["id"] == active) { active } else { "mfa-quick-tasks".to_string() };
++    let mut config = json!({"version": "1.0", "instances": instances,
++        "settings": {"theme": "system", "language": language, "onboardingCompleted": true,
++            "hotkeys": {"startTasks": "F10", "stopTasks": "F11", "globalEnabled": true},
++            "screenshotPanelExpanded": false, "screenshotFrameRate": "1",
++            "mirrorChyan": {"cdk": "", "channel": if stable_version(interface["version"].as_str().unwrap_or("")) { "stable" } else { "beta" }}},
++        "interfaceTaskSnapshot": array(&interface["task"]).iter().map(|task| task["name"].clone()).collect::<Vec<_>>(),
++        "presetInitialized": true, "lastActiveInstanceId": active});
++    let global_options = convert_options(&settings["GlobalOptionItems"], &interface["option"], report, "global");
++    if !global_options.is_empty() {
++        config["globalOptionValues"] = Value::Object(global_options);
++    }
++    for key in ["DownloadCDK", "GitHubToken"] {
++        if settings[key].as_str().is_some_and(|secret| !secret.is_empty()) {
++            report.warnings.push(format!("{key}: MFA encrypted credential retained in backup; re-enter it in MXU settings"));
++        }
++    }
++    config
++}
++
++fn config_filename(interface: &Value) -> String {
++    match interface["name"].as_str() {
++        Some(name) => format!("mxu-{}.json", name.chars().map(|character| {
++            if matches!(character, '/' | '\\' | '.' | ':') { '_' } else { character }
++        }).collect::<String>()),
++        None => "mxu.json".to_string(),
++    }
++}
++
++/// Called by AppConfigState only when the project MXU config is absent.
++/// No MFA files means no migration: the normal MXU first-run flow remains active.
++pub fn migrate_legacy_config(data_dir: &Path, interface: &Value) -> Result<Option<Value>, String> {
++    let destination = data_dir.join("config").join(config_filename(interface));
++    if destination.exists() {
++        return Ok(None);
++    }
++    let mut paths: Vec<PathBuf> = ["config/config.json", "appsettings.json"].iter()
++        .map(|relative| data_dir.join(relative)).filter(|path| path.is_file()).collect();
++    let instance_dir = data_dir.join("config/instances");
++    if instance_dir.is_dir() {
++        let mut instances: Vec<PathBuf> = fs::read_dir(&instance_dir).map_err(|error| error.to_string())?
++            .map(|entry| entry.map(|entry| entry.path())).collect::<Result<_, _>>().map_err(|error| error.to_string())?;
++        instances.retain(|path| path.is_file() && path.extension().is_some_and(|extension| extension == "json"));
++        instances.sort();
++        paths.extend(instances);
++    }
++    if paths.is_empty() {
++        return Ok(None);
++    }
++    let mut sources = Vec::new();
++    let mut digest = Sha256::new();
++    for path in paths {
++        let relative = path.strip_prefix(data_dir).map_err(|error| error.to_string())?.to_path_buf();
++        let bytes = fs::read(&path).map_err(|error| format!("Read MFA config {}: {error}", path.display()))?;
++        digest.update(relative.to_string_lossy().replace('\\', "/").as_bytes());
++        digest.update([0]);
++        digest.update(&bytes);
++        sources.push((relative, bytes));
++    }
++    let backup = data_dir.join("config/backups").join(format!("mfa-to-mxu-{}", &format!("{:x}", digest.finalize())[..16]));
++    let mut source_files = Vec::new();
++    let mut saved = BTreeMap::new();
++    let (mut settings, mut global) = (json!({}), json!({}));
++    let mut report = Report::default();
++    // Back up all sources before parsing or publishing any converted config.
++    for (relative, bytes) in &sources {
++        let target = backup.join(relative);
++        fs::create_dir_all(target.parent().unwrap()).map_err(|error| error.to_string())?;
++        match OpenOptions::new().write(true).create_new(true).open(&target) {
++            Ok(mut file) => {
++                file.write_all(bytes).and_then(|_| file.sync_all()).map_err(|error| format!("Back up MFA config {}: {error}", target.display()))?;
++            }
++            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
++                if fs::read(&target).map_err(|error| error.to_string())? != *bytes {
++                    return Err(format!("Conflicting MFA backup: {}", target.display()));
++                }
++            }
++            Err(error) => return Err(format!("Back up MFA config {}: {error}", target.display())),
++        }
++        source_files.push(json!({"path": relative.to_string_lossy().replace('\\', "/"), "sha256": format!("{:x}", Sha256::digest(bytes))}));
++    }
++    for (relative, bytes) in sources {
++        let value = parse_config(&bytes).unwrap_or_else(|error| {
++            report.warnings.push(format!("{}: {error}; exact file retained in MFA backup", relative.display()));
++            json!({})
++        });
++        if relative == Path::new("config/config.json") {
++            settings = value;
++        } else if relative == Path::new("appsettings.json") {
++            global = value;
++        } else if let Some(identifier) = relative.file_stem().and_then(|stem| stem.to_str()) {
++            saved.insert(identifier.to_string(), value);
++        }
++    }
++    let config = build_config(&saved, &settings, &global, interface, &mut report);
++    let report_path = backup.join("migration-report.json");
++    let report_json = json!({"status": "migrated", "version": interface["version"],
++        "config_path": destination.to_string_lossy(), "backup_path": backup.to_string_lossy(),
++        "report_path": report_path.to_string_lossy(), "source_files": source_files,
++        "warnings": report.warnings, "timers": report.timers, "unmapped_fields": report.unmapped_fields});
++    fs::write(&report_path, serde_json::to_vec_pretty(&report_json).map_err(|error| error.to_string())?)
++        .map_err(|error| format!("Save MFA migration report: {error}"))?;
++    let content = serde_json::to_vec_pretty(&config).map_err(|error| error.to_string())?;
++    match OpenOptions::new().write(true).create_new(true).open(&destination) {
++        Ok(mut file) => {
++            file.write_all(&content).and_then(|_| file.sync_all()).map_err(|error| format!("Save MXU config: {error}"))?;
++        }
++        Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(None),
++        Err(error) => return Err(format!("Save MXU config: {error}")),
++    }
++    log::info!("MaaRoco: migrated MFA config; recovery files: {}", backup.display());
++    for warning in &report.warnings {
++        log::warn!("MaaRoco migration: {warning}");
++    }
++    Ok(Some(config))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++
++    static COUNTER: AtomicUsize = AtomicUsize::new(0);
++
++    struct Workspace(PathBuf);
++    impl Workspace {
++        fn new() -> Self {
++            let path = std::env::temp_dir().join(format!("maaroco-mxu-migration-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
++            fs::create_dir_all(&path).unwrap();
++            Self(path)
++        }
++        fn write(&self, relative: &str, value: &Value) {
++            let path = self.0.join(relative);
++            fs::create_dir_all(path.parent().unwrap()).unwrap();
++            fs::write(path, serde_json::to_vec(value).unwrap()).unwrap();
++        }
++        fn report(&self) -> (PathBuf, Value) {
++            let backup = fs::read_dir(self.0.join("config/backups")).unwrap().next().unwrap().unwrap().path();
++            let report = parse_config(&fs::read(backup.join("migration-report.json")).unwrap()).unwrap();
++            (backup, report)
++        }
++    }
++    impl Drop for Workspace {
++        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.0); }
++    }
++
++    fn interface() -> Value {
++        json!({"name": "MaaRoco", "version": "v0.3.0", "resource": [{"name": "default"}],
++            "task": [
++                {"name": "LaunchGame", "option": ["WeGamePath", "WeGameLoginSource"]},
++                {"name": "Throw", "default_check": true, "option": ["Hold", "Mode", "Features", "Toggle"]}],
++            "option": {
++                "WeGamePath": {"type": "input", "inputs": [{"name": "WeGameExecutable", "default": "C:\\WeGame\\wegame.exe"}]},
++                "WeGameLoginSource": {"type": "select", "default_case": "QQ", "cases": [{"name": "QQ"}, {"name": "WeChat"}]},
++                "Hold": {"type": "input", "inputs": [{"name": "Min", "default": "200"}, {"name": "Max", "default": "500"}]},
++                "Mode": {"type": "select", "default_case": "Normal", "cases": [{"name": "Normal"}, {"name": "Special", "option": ["Child"]}]},
++                "Child": {"type": "input", "inputs": [{"name": "Count", "default": "1"}]},
++                "Features": {"type": "checkbox", "default_case": ["First"], "cases": [{"name": "First"}, {"name": "Second"}]},
++                "Toggle": {"type": "switch", "default_case": "Yes", "cases": [{"name": "Yes"}, {"name": "No"}]}
++            }})
++    }
++
++    #[test]
++    fn no_legacy_files_does_not_create_default_config() {
++        let workspace = Workspace::new();
++        assert!(migrate_legacy_config(&workspace.0, &interface()).unwrap().is_none());
++        assert!(!workspace.0.join("config").exists());
++    }
++
++    #[test]
++    fn preserves_order_checks_input_select_checkbox_switch_and_children() {
++        let workspace = Workspace::new();
++        workspace.write("config/instances/default.json", &json!({"InstanceName": "我的队列", "TaskItems": [
++            {"name": "Throw", "default_check": false, "display_name_override": "投掷 2", "option": [
++                {"name": "Hold", "data": {"Min": "250", "Max": ""}},
++                {"name": "Mode", "index": 1, "sub_options": [{"name": "Child", "data": {"Count": "9"}}]},
++                {"name": "Features", "selected_cases": ["Second", "First", "Second"]}, {"name": "Toggle", "index": 1}]},
++            {"name": "LaunchGame", "default_check": true}, {"name": "Throw", "default_check": true}]}));
++        let config = migrate_legacy_config(&workspace.0, &interface()).unwrap().unwrap();
++        let queue = &config["instances"][1];
++        assert_eq!(queue["name"], "我的队列");
++        assert_eq!(array(&queue["tasks"]).iter().map(|task| text(&task["taskName"])).collect::<Vec<_>>(), ["Throw", "LaunchGame", "Throw"]);
++        assert_eq!(array(&queue["tasks"]).iter().map(|task| boolean(&task["enabled"])).collect::<Vec<_>>(), [false, true, true]);
++        let options = &queue["tasks"][0]["optionValues"];
++        assert_eq!(options["Hold"]["values"], json!({"Min": "250", "Max": ""}));
++        assert_eq!(options["Mode"]["caseName"], "Special");
++        assert_eq!(options["Child"]["values"]["Count"], "9");
++        assert_eq!(options["Features"]["caseNames"], json!(["Second", "First"]));
++        assert_eq!(options["Toggle"]["value"], false);
++        assert_eq!(queue["tasks"][0]["customName"], "投掷 2");
++        assert_eq!(config["settings"]["hotkeys"]["stopTasks"], "F11");
++        assert_eq!(config["settings"]["hotkeys"]["globalEnabled"], true);
++        assert_eq!(config["settings"]["screenshotPanelExpanded"], false);
++    }
++
++    #[test]
++    fn exact_backup_existing_config_and_repeat_migration_are_safe() {
++        let workspace = Workspace::new();
++        let bytes = b"\xef\xbb\xbf{ // comment\n \"CurrentLanguage\": \"en-US\", \"url\": \"https://x//y\", }";
++        fs::create_dir_all(workspace.0.join("config")).unwrap();
++        fs::write(workspace.0.join("config/config.json"), bytes).unwrap();
++        let config = migrate_legacy_config(&workspace.0, &interface()).unwrap().unwrap();
++        let (backup, _) = workspace.report();
++        assert_eq!(config["settings"]["language"], "en-US");
++        assert_eq!(fs::read(workspace.0.join("config/config.json")).unwrap(), bytes);
++        assert_eq!(fs::read(backup.join("config/config.json")).unwrap(), bytes);
++        let path = workspace.0.join("config/mxu-MaaRoco.json");
++        fs::write(&path, b"corrupt user data").unwrap();
++        assert!(migrate_legacy_config(&workspace.0, &interface()).unwrap().is_none());
++        assert_eq!(fs::read(path).unwrap(), b"corrupt user data");
++        assert_eq!(fs::read_dir(workspace.0.join("config/backups")).unwrap().count(), 1);
++    }
++
++    #[test]
++    fn launcher_options_custom_tabs_resource_and_last_active_survive() {
++        let workspace = Workspace::new();
++        workspace.write("config/instances/default.json", &json!({"TaskItems": [{"name": "LaunchGame", "option": [{"name": "WeGameLoginSource", "index": 0}]}]}));
++        workspace.write("config/instances/launch-game.json", &json!({"InstanceName": "启动", "TaskItems": [{"name": "LaunchGame", "option": [
++            {"name": "WeGamePath", "data": {"WeGameExecutable": "D:\\腾讯\\WeGame\\wegame.exe"}}, {"name": "WeGameLoginSource", "index": 1}]}]}));
++        workspace.write("config/instances/a.json", &json!({"InstanceName": "甲", "Resource": "my-resource", "DesktopWindowName": "游戏窗口"}));
++        workspace.write("config/instances/b.json", &json!({"InstanceName": "乙"}));
++        workspace.write("appsettings.json", &json!({"Instances.Order": "b,a,default,launch-game", "Instances.LastActive": "a"}));
++        let config = migrate_legacy_config(&workspace.0, &interface()).unwrap().unwrap();
++        assert_eq!(config["instances"][0]["tasks"][0]["optionValues"]["WeGameLoginSource"]["caseName"], "WeChat");
++        assert_eq!(config["instances"][0]["tasks"][0]["optionValues"]["WeGamePath"]["values"]["WeGameExecutable"], "D:\\腾讯\\WeGame\\wegame.exe");
++        assert_eq!(config["instances"][1]["tasks"][0]["optionValues"]["WeGameLoginSource"]["caseName"], "QQ");
++        assert_eq!(config["instances"][2]["name"], "乙");
++        assert_eq!(config["instances"][3]["resourceName"], "my-resource");
++        assert_eq!(config["lastActiveInstanceId"], "mfa-a");
++    }
++
++    #[test]
++    fn daily_weekly_timers_migrate_and_monthly_stop_timers_are_retained() {
++        let workspace = Workspace::new();
++        workspace.write("config/instances/default.json", &json!({"TaskItems": [{"name": "Throw", "default_check": true}]}));
++        let mut timers = Map::new();
++        for (number, schedule, action) in [(1, "0||", "0"), (2, "1|6,1,1|", "0"), (3, "2||1,15", "0"), (4, "0||", "1")] {
++            let prefix = format!("Timer.Timer{number}");
++            timers.insert(prefix.clone(), json!("True"));
++            timers.insert(format!("{prefix}Time"), json!("8:05"));
++            timers.insert(format!("{prefix}.Config"), json!("default"));
++            timers.insert(format!("{prefix}.Schedule"), json!(schedule));
++            timers.insert(format!("{prefix}.Action"), json!(action));
++        }
++        workspace.write("appsettings.json", &Value::Object(timers));
++        let config = migrate_legacy_config(&workspace.0, &interface()).unwrap().unwrap();
++        let policies = &config["instances"][1]["schedulePolicies"];
++        assert_eq!(array(policies).len(), 2);
++        assert_eq!(policies[0]["weekdays"], json!([0, 1, 2, 3, 4, 5, 6]));
++        assert_eq!(policies[1]["weekdays"], json!([1, 6]));
++        assert_eq!(policies[1]["times"], json!(["08:05"]));
++        let (_, report) = workspace.report();
++        assert_eq!(report["timers"][2]["status"], "retained");
++        assert_eq!(report["timers"][2]["source"]["Timer.Timer3.Schedule"], "2||1,15");
++        assert_eq!(report["timers"][3]["status"], "retained");
++    }
++
++    #[test]
++    fn empty_checkbox_unknown_options_and_invalid_index_are_handled() {
++        let workspace = Workspace::new();
++        workspace.write("config/instances/default.json", &json!({"CustomSetting": 42, "TaskItems": [
++            {"name": "Removed"}, {"name": "Throw", "option": [
++                {"name": "Features", "selected_cases": []}, {"name": "Unknown", "data": {"Secret": "kept"}}, {"name": "Mode", "index": -1}]}]}));
++        let config = migrate_legacy_config(&workspace.0, &interface()).unwrap().unwrap();
++        assert_eq!(array(&config["instances"][1]["tasks"]).len(), 1);
++        assert_eq!(config["instances"][1]["tasks"][0]["optionValues"]["Features"]["caseNames"], json!([]));
++        assert_eq!(config["instances"][1]["tasks"][0]["optionValues"]["Mode"]["caseName"], "Normal");
++        let (backup, report) = workspace.report();
++        assert!(array(&report["warnings"]).iter().any(|warning| text(warning).contains("Removed")));
++        assert!(array(&report["warnings"]).iter().any(|warning| text(warning).contains("Unknown")));
++        assert_eq!(report["unmapped_fields"]["default"], json!(["CustomSetting"]));
++        assert!(backup.join("config/instances/default.json").exists());
++    }
++}
+diff --git a/src-tauri/src/commands/mod.rs b/src-tauri/src/commands/mod.rs
+index 1e48245..d86bf13 100644
+--- a/src-tauri/src/commands/mod.rs
++++ b/src-tauri/src/commands/mod.rs
+@@ -21,6 +21,8 @@ pub mod app_config;
+ pub mod download;
+ pub mod file_ops;
+ pub mod maa_agent;
++pub mod maaroco;
++pub mod maaroco_migration;
+ pub mod maa_core;
+ pub mod state;
+ pub mod system;
+diff --git a/src-tauri/src/commands/state.rs b/src-tauri/src/commands/state.rs
+index 721c68b..8725717 100644
+--- a/src-tauri/src/commands/state.rs
++++ b/src-tauri/src/commands/state.rs
+@@ -29,7 +29,7 @@ pub fn maa_get_instance_state(
+         .ok_or("Instance not found")?;
+ 
+     // 通过 Maa API 查询真实状态
+-    let is_running = instance.tasker.as_ref().is_some_and(|t| t.running());
++    let is_running = instance.maaroco_queue.is_running(instance.tasker.as_ref().is_some_and(|t| t.running()));
+ 
+     if !is_running && instance.stop_in_progress {
+         instance.stop_in_progress = false;
+@@ -69,7 +69,7 @@ pub fn maa_get_all_states(state: State<Arc<MaaState>>) -> Result<AllInstanceStat
+ 
+     for (id, instance) in instances.iter_mut() {
+         // 通过 Maa API 查询真实状态
+-        let is_running = instance.tasker.as_ref().is_some_and(|t| t.running());
++        let is_running = instance.maaroco_queue.is_running(instance.tasker.as_ref().is_some_and(|t| t.running()));
+ 
+         if !is_running && instance.stop_in_progress {
+             instance.stop_in_progress = false;
+diff --git a/src-tauri/src/commands/system.rs b/src-tauri/src/commands/system.rs
+index 6667a6a..77c4c15 100644
+--- a/src-tauri/src/commands/system.rs
++++ b/src-tauri/src/commands/system.rs
+@@ -193,6 +193,55 @@ pub fn is_workstation_locked() -> bool {
+     }
+ }
+ 
++/// Encode arguments for the Windows command line accepted by ShellExecuteEx.
++#[cfg(any(windows, test))]
++pub fn windows_command_line(args: &[String]) -> String {
++    args.iter().map(|arg| {
++        if !arg.is_empty() && !arg.chars().any(|c| c.is_whitespace() || c == '"') {
++            return arg.clone();
++        }
++        // ShellExecuteEx expects a Windows command line, not shell syntax.
++        let mut quoted = String::from("\"");
++        let mut slashes = 0;
++        for character in arg.chars() {
++            if character == '\\' {
++                slashes += 1;
++                continue;
++            }
++            if character == '"' {
++                quoted.extend(std::iter::repeat_n('\\', slashes * 2 + 1));
++            } else {
++                quoted.extend(std::iter::repeat_n('\\', slashes));
++            }
++            slashes = 0;
++            quoted.push(character);
++        }
++        quoted.extend(std::iter::repeat_n('\\', slashes * 2));
++        quoted.push('"');
++        quoted
++    }).collect::<Vec<_>>().join(" ")
++}
++
++#[cfg(test)]
++mod command_line_tests {
++    use super::windows_command_line;
++
++    #[test]
++    fn elevation_retains_auto_run_and_instance_arguments() {
++        assert_eq!(windows_command_line(&["--autostart".into(), "--instance".into(),
++            "日常 任务".into(), "--quit-after-run".into()]),
++            "--autostart --instance \"日常 任务\" --quit-after-run");
++    }
++
++    #[test]
++    fn elevation_quotes_empty_arguments_quotes_and_trailing_slashes() {
++        assert_eq!(windows_command_line(&[String::new()]), "\"\"");
++        assert_eq!(windows_command_line(&["a\"b".into()]), "\"a\\\"b\"");
++        assert_eq!(windows_command_line(&["C:\\with space\\".into()]), "\"C:\\with space\\\\\"");
++        assert_eq!(windows_command_line(&["C:\\plain\\".into()]), "C:\\plain\\");
++    }
++}
++
+ /// 以管理员权限重启应用
+ #[tauri::command]
+ pub fn restart_as_admin(app_handle: tauri::AppHandle) -> Result<(), String> {
+@@ -204,12 +253,16 @@ pub fn restart_as_admin(app_handle: tauri::AppHandle) -> Result<(), String> {
+         let exe_path = std::env::current_exe().map_err(|e| format!("获取程序路径失败: {}", e))?;
+ 
+         let exe_path_str = exe_path.to_string_lossy().to_string();
++        let parameters = windows_command_line(&std::env::args().skip(1).collect::<Vec<_>>());
++        let directory = exe_path.parent().map(|path| path.to_string_lossy().into_owned());
+ 
+         info!("restart_as_admin: restarting with admin privileges");
+ 
+         let result = ShellExecuteEx(&SHELLEXECUTEINFO {
+             file: &exe_path_str,
+             verb: Option::from("runas"),
++            parameters: Some(&parameters),
++            directory: directory.as_deref(),
+             show: SW::SHOWNORMAL,
+             mask: SEE_MASK::NOASYNC | SEE_MASK::FLAG_NO_UI,
+             ..Default::default()
+diff --git a/src-tauri/src/commands/types.rs b/src-tauri/src/commands/types.rs
+index abe9de5..eec0e8c 100644
+--- a/src-tauri/src/commands/types.rs
++++ b/src-tauri/src/commands/types.rs
+@@ -148,7 +148,19 @@ pub enum ControllerConfig {
+ 
+ #[cfg(test)]
+ mod tests {
+-    use super::ControllerConfig;
++    use super::{ControllerConfig, TaskRunState, TaskStatus};
++
++    #[test]
++    fn completed_ids_keep_selected_task_status_after_the_next_tasker_is_created() {
++        let mut state = TaskRunState::default();
++        state.mappings.insert(1_000_001, "launch-selected-id".into());
++        state.mappings.insert(1_000_002, "battle-selected-id".into());
++        state.statuses.insert("launch-selected-id".into(), "succeeded".into());
++        state.statuses.insert("battle-selected-id".into(), "running".into());
++        assert!(matches!(state.status_for_task(1_000_001), Some(TaskStatus::Succeeded)));
++        assert!(matches!(state.status_for_task(1_000_002), Some(TaskStatus::Running)));
++        assert!(state.status_for_task(1_000_003).is_none());
++    }
+ 
+     #[test]
+     fn deserializes_macos_controller_config_with_default_display_short_side() {
+@@ -202,6 +214,19 @@ pub struct TaskRunState {
+     pub overall_status: Option<String>,
+ }
+ 
++impl TaskRunState {
++    pub fn status_for_task(&self, task_id: i64) -> Option<TaskStatus> {
++        let selected_id = self.mappings.get(&task_id)?;
++        match self.statuses.get(selected_id)?.as_str() {
++            "pending" => Some(TaskStatus::Pending),
++            "running" => Some(TaskStatus::Running),
++            "succeeded" => Some(TaskStatus::Succeeded),
++            "failed" => Some(TaskStatus::Failed),
++            _ => None,
++        }
++    }
++}
++
+ /// 实例运行时状态（用于前端查询）
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct InstanceState {
+@@ -230,6 +255,8 @@ pub struct AllInstanceStates {
+ /// 实例运行时状态（持有 MaaFramework 对象句柄）
+ #[derive(Default)]
+ pub struct InstanceRuntime {
++    /// Includes the time between MaaRoco tasks while refreshing the game window.
++    pub maaroco_queue: super::maaroco::MaarocoQueue,
+     pub resource: Option<Resource>,
+     pub controller: Option<Controller>,
+     /// 当前控制器的配置（用于 ControllerPool 引用管理）
+diff --git a/src-tauri/src/commands/utils.rs b/src-tauri/src/commands/utils.rs
+index 84e0ab2..9dfeb7f 100644
+--- a/src-tauri/src/commands/utils.rs
++++ b/src-tauri/src/commands/utils.rs
+@@ -89,6 +89,11 @@ pub fn handle_task_callback(
+             None => return,
+         };
+         let state = &mut instance.task_run_state;
++        // Agent/internal stop tasks and late callbacks from a previous run are
++        // not part of the user queue and must not finalize its current state.
++        if !state.pending_task_ids.contains(&task_id) {
++            return;
++        }
+ 
+         if is_started {
+             // 任务开始：定位该任务在队列中的索引，更新当前索引和状态
+@@ -116,6 +121,7 @@ pub fn handle_task_callback(
+                     .unwrap_or(false)
+             });
+ 
++            let all_completed = all_completed && instance.maaroco_queue.callback_can_complete();
+             if all_completed {
+                 let has_failed = state.statuses.values().any(|s| s == "failed");
+                 state.overall_status =
+diff --git a/src-tauri/src/main.rs b/src-tauri/src/main.rs
+index c3df40e..d90ff80 100644
+--- a/src-tauri/src/main.rs
++++ b/src-tauri/src/main.rs
+@@ -56,9 +56,16 @@ fn main() {
+             use winsafe::co::{SEE_MASK, SW};
+             use winsafe::{ShellExecuteEx, SHELLEXECUTEINFO};
+ 
++            let parameters = mxu_lib::commands::system::windows_command_line(
++                &std::env::args().skip(1).collect::<Vec<_>>(),
++            );
++            let directory = exe_path.parent().map(|path| path.to_string_lossy().into_owned());
++
+             let result = ShellExecuteEx(&SHELLEXECUTEINFO {
+                 file: &exe_path.to_string_lossy(),
+                 verb: Option::from("runas"),
++                parameters: Some(&parameters),
++                directory: directory.as_deref(),
+                 show: SW::SHOWNORMAL,
+                 mask: SEE_MASK::NOASYNC | SEE_MASK::FLAG_NO_UI,
+                 ..Default::default()
+diff --git a/src-tauri/src/web_server.rs b/src-tauri/src/web_server.rs
+index e5c9dc8..1bf1583 100644
+--- a/src-tauri/src/web_server.rs
++++ b/src-tauri/src/web_server.rs
+@@ -30,7 +30,7 @@ use crate::commands::{
+         get_cached_image_impl, load_resource_impl, override_pipeline_impl, post_click_impl,
+         post_screencap_impl, run_task_impl, stop_task_impl,
+     },
+-    types::{AgentConfig, ControllerConfig, ControllerInfo, MaaState, TaskConfig},
++    types::{AgentConfig, ControllerConfig, ControllerInfo, InstanceRuntime, MaaState, TaskConfig},
+     utils::{emit_callback_event, emit_config_changed, emit_state_changed},
+ };
+ use crate::ws_broadcast::WsBroadcast;
+@@ -613,6 +613,28 @@ async fn handle_put_config(
+     }
+ }
+ 
++fn http_instance_state_snapshot(runtime: &mut InstanceRuntime) -> serde_json::Value {
++    let is_running = runtime
++        .maaroco_queue
++        .is_running(runtime.tasker.as_ref().is_some_and(|t| t.running()));
++
++    // A queue also owns the instance while replacing its controller/Tasker.
++    // Keep stop state until that worker finishes, matching the native snapshot.
++    if !is_running && runtime.stop_in_progress {
++        runtime.stop_in_progress = false;
++        runtime.stop_started_at = None;
++    }
++
++    // snake_case matches the native invoke response; maaService converts it.
++    serde_json::json!({
++        "connected": runtime.controller.as_ref().is_some_and(|c| c.connected()),
++        "resource_loaded": runtime.resource.as_ref().is_some_and(|r| r.loaded()),
++        "tasker_inited": runtime.tasker.as_ref().is_some_and(|t| t.inited()),
++        "is_running": is_running,
++        "task_run_state": serde_json::to_value(&runtime.task_run_state).unwrap_or_default(),
++    })
++}
++
+ /// GET /api/maa/state
+ /// 返回所有 Maa 实例状态快照（与 maa_get_all_states invoke 命令返回格式相同）
+ async fn handle_get_maa_state(State(state): State<WebState>) -> impl IntoResponse {
+@@ -635,26 +657,7 @@ async fn handle_get_maa_state(State(state): State<WebState>) -> impl IntoRespons
+             let mut instance_states: HashMap<String, serde_json::Value> = HashMap::new();
+ 
+             for (id, runtime) in instances.iter_mut() {
+-                let is_running = runtime.tasker.as_ref().is_some_and(|t| t.running());
+-
+-                // 与 state.rs 的 maa_get_all_states 保持一致：清理停止标志
+-                if !is_running && runtime.stop_in_progress {
+-                    runtime.stop_in_progress = false;
+-                    runtime.stop_started_at = None;
+-                }
+-
+-                // 字段名使用 snake_case，与 Tauri invoke 返回格式保持一致，
+-                // 前端 maaService.getAllStates 会统一做 camelCase 转换
+-                instance_states.insert(
+-                    id.clone(),
+-                    serde_json::json!({
+-                        "connected": runtime.controller.as_ref().is_some_and(|c| c.connected()),
+-                        "resource_loaded": runtime.resource.as_ref().is_some_and(|r| r.loaded()),
+-                        "tasker_inited": runtime.tasker.as_ref().is_some_and(|t| t.inited()),
+-                        "is_running": is_running,
+-                        "task_run_state": serde_json::to_value(&runtime.task_run_state).unwrap_or_default(),
+-                    }),
+-                );
++                instance_states.insert(id.clone(), http_instance_state_snapshot(runtime));
+             }
+ 
+             Json(serde_json::json!({
+@@ -934,6 +937,8 @@ struct StartTasksRequest {
+     pi_envs: Option<std::collections::HashMap<String, String>>,
+     #[serde(default)]
+     reset_state: Option<bool>,
++    #[serde(default)]
++    auto_controller: Option<bool>,
+     /// 当前 controller 描述，仅用于遥测埋点
+     #[serde(default)]
+     controller_info: Option<ControllerInfo>,
+@@ -973,6 +978,7 @@ async fn handle_start_tasks(
+         body.pi_envs,
+         body.reset_state.unwrap_or(true),
+         body.controller_info,
++        body.auto_controller.unwrap_or(false),
+     )
+     .await
+     {
+@@ -1320,3 +1326,56 @@ async fn handle_restart_as_admin(State(state): State<WebState>) -> impl IntoResp
+             .into_response(),
+     }
+ }
++
++#[cfg(test)]
++mod state_snapshot_tests {
++    use super::*;
++
++    #[test]
++    fn http_snapshot_stays_running_between_queue_tasks_and_during_stop() {
++        let mut runtime = InstanceRuntime::default();
++        runtime.maaroco_queue.begin().unwrap();
++        runtime.task_run_state.overall_status = Some("Running".to_string());
++        runtime.task_run_state.statuses.insert(
++            "queue-a".to_string(),
++            "succeeded".to_string(),
++        );
++        runtime.task_run_state.statuses.insert(
++            "queue-b".to_string(),
++            "pending".to_string(),
++        );
++
++        // Reproduces controller replacement: the first task has completed, and
++        // the next task's controller and Tasker have not been created yet.
++        let snapshot = http_instance_state_snapshot(&mut runtime);
++        assert_eq!(snapshot["connected"], false);
++        assert_eq!(snapshot["tasker_inited"], false);
++        assert_eq!(snapshot["is_running"], true);
++        assert_eq!(snapshot["task_run_state"]["overall_status"], "Running");
++        assert_eq!(snapshot["task_run_state"]["statuses"]["queue-a"], "succeeded");
++        assert_eq!(snapshot["task_run_state"]["statuses"]["queue-b"], "pending");
++
++        runtime.maaroco_queue.cancel();
++        runtime.stop_in_progress = true;
++        runtime.stop_started_at = Some(std::time::Instant::now());
++        assert_eq!(
++            http_instance_state_snapshot(&mut runtime)["is_running"],
++            true,
++        );
++        assert!(runtime.stop_in_progress);
++        assert!(runtime.stop_started_at.is_some());
++
++        runtime.task_run_state.overall_status = Some("Failed".to_string());
++        runtime.task_run_state.statuses.insert(
++            "queue-b".to_string(),
++            "failed".to_string(),
++        );
++        runtime.maaroco_queue.active = false;
++        assert_eq!(
++            http_instance_state_snapshot(&mut runtime)["is_running"],
++            false,
++        );
++        assert!(!runtime.stop_in_progress);
++        assert!(runtime.stop_started_at.is_none());
++    }
++}
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 9be7a3d..b22a583 100644
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -21,6 +21,7 @@
+         "minHeight": 525,
+         "decorations": true,
+         "shadow": true,
++        "dragDropEnabled": false,
+         "visible": false
+       }
+     ],
+diff --git a/src/App.tsx b/src/App.tsx
+index c850f8a..dbd3b4c 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -645,7 +645,7 @@ function App() {
+       }
+ 
+       // 应用配置
+-      if (config.instances.length > 0) {
++      if (config.instances.length > 0 || projectName === 'MaaRoco') {
+         importConfig(config);
+       }
+ 
+@@ -849,6 +849,10 @@ function App() {
+         const currentInstances = storeState.instances;
+         const pi = storeState.projectInterface;
+         const presets = pi?.preset;
++        if (pi?.name === 'MaaRoco') {
++          storeState.setPresetInitialized(true);
++          return;
++        }
+ 
+         if (presets && presets.length > 0 && !storeState.presetInitialized) {
+           // 有预设且尚未完成预设初始化 → 为每个预设创建一个 tab 并应用
+@@ -1054,7 +1058,10 @@ function App() {
+       }
+ 
+       // 自动检查更新并下载（调试版本跳过，MXU 开发模式跳过）
+-      if (result.interface.mirrorchyan_rid && result.interface.version) {
++      if (
++        (result.interface.mirrorchyan_rid || result.interface.name === 'MaaRoco') &&
++        result.interface.version
++      ) {
+         if (import.meta.env.DEV) {
+           log.info('MXU 开发模式，跳过自动更新检查');
+         } else if (isDebugVersion(result.interface.version)) {
+@@ -1063,7 +1070,7 @@ function App() {
+           const appState = useAppStore.getState();
+           try {
+             const updateResult = await checkAndPrepareDownload({
+-              resourceId: result.interface.mirrorchyan_rid,
++              resourceId: result.interface.mirrorchyan_rid || '',
+               currentVersion: result.interface.version,
+               cdk: appState.mirrorChyanSettings.cdk || undefined,
+               channel: appState.mirrorChyanSettings.channel,
+@@ -1603,6 +1610,20 @@ function App() {
+       // 应用内快捷键：开始/结束任务（默认 F10/F11，可在设置中自定义，支持组合键）
+       // 使用自定义事件通知 Toolbar 组件，以复用现有启动/停止逻辑
+       if (e.repeat) return;
++      const shortcutState = useAppStore.getState();
++      const isMaaRoco = shortcutState.projectInterface?.name === 'MaaRoco';
++      if (isMaaRoco && e.key === 'F11') {
++        e.preventDefault();
++        // 全局注册失败时仍保留应用内停止，包括正在编辑输入框的场景。
++        if (!isTauri() || shortcutState.globalHotkeyError?.combo === 'F11') {
++          document.dispatchEvent(
++            new CustomEvent('mxu-stop-tasks', {
++              detail: { source: 'hotkey', combo: 'F11' },
++            }),
++          );
++        }
++        return;
++      }
+       if (shouldIgnoreHotkey(e)) return;
+       const combo = getKeyCombo(e);
+       if (!combo) {
+@@ -1611,7 +1632,7 @@ function App() {
+ 
+       const { hotkeys } = useAppStore.getState();
+       // 全局快捷键开启时跳过本地监听，避免重复触发
+-      if (hotkeys?.globalEnabled) return;
++      if (hotkeys?.globalEnabled || isMaaRoco) return;
+ 
+       const startKey = hotkeys?.startTasks || 'F10';
+       const stopKey = hotkeys?.stopTasks || 'F11';
+@@ -1645,16 +1666,17 @@ function App() {
+ 
+   // 全局快捷键（窗口失焦时也生效）
+   const hotkeys = useAppStore((state) => state.hotkeys);
++  const isMaaRocoProject = useAppStore((state) => state.projectInterface?.name === 'MaaRoco');
+   useEffect(() => {
+     const { setGlobalHotkeyError } = useAppStore.getState();
+-    if (!hotkeys?.globalEnabled) {
++    if (!hotkeys?.globalEnabled && !isMaaRocoProject) {
+       setGlobalHotkeyError(null);
+       return;
+     }
+     if (!isTauri()) return; // 浏览器环境不支持全局快捷键
+ 
+     const startKey = hotkeys.startTasks || 'F10';
+-    const stopKey = hotkeys.stopTasks || 'F11';
++    const stopKey = isMaaRocoProject ? 'F11' : hotkeys.stopTasks || 'F11';
+ 
+     // Ctrl -> CommandOrControl
+     const toTauriKey = (k: string) => k.replace(/^Ctrl\+/i, 'CommandOrControl+');
+@@ -1663,10 +1685,25 @@ function App() {
+     let lastStartTime = 0;
+     const registerKeys = async () => {
+       // 记录正在注册的按键，失败时用于告知用户具体是哪个组合键
+-      let registeringKey = startKey;
++      let registeringKey = isMaaRocoProject ? stopKey : startKey;
+       try {
+         const { register } = await getGlobalShortcut();
+-        await register(toTauriKey(startKey), () => {
++        const registerStopKey = () =>
++          register(toTauriKey(stopKey), (event) => {
++            if (event.state !== 'Pressed') return;
++            document.dispatchEvent(
++              new CustomEvent('mxu-stop-tasks', {
++                detail: { source: 'global-hotkey', combo: stopKey },
++              }),
++            );
++          });
++        if (isMaaRocoProject) {
++          registeringKey = stopKey;
++          await registerStopKey();
++        }
++        registeringKey = startKey;
++        await register(toTauriKey(startKey), (event) => {
++          if (event.state !== 'Pressed') return;
+           const now = Date.now();
+           if (now - lastStartTime < GLOBAL_HOTKEY_THROTTLE_MS) return;
+           lastStartTime = now;
+@@ -1678,14 +1715,8 @@ function App() {
+         });
+         registeringKey = stopKey;
+         // 避免重复注册相同的键
+-        if (stopKey !== startKey) {
+-          await register(toTauriKey(stopKey), () => {
+-            document.dispatchEvent(
+-              new CustomEvent('mxu-stop-tasks', {
+-                detail: { source: 'global-hotkey', combo: stopKey },
+-              }),
+-            );
+-          });
++        if (!isMaaRocoProject && stopKey !== startKey) {
++          await registerStopKey();
+         }
+         log.info('全局快捷键已注册:', startKey, stopKey);
+         setGlobalHotkeyError(null);
+@@ -1710,7 +1741,7 @@ function App() {
+         .then(({ unregisterAll }) => unregisterAll())
+         .catch(() => {});
+     };
+-  }, [hotkeys?.globalEnabled, hotkeys?.startTasks, hotkeys?.stopTasks]);
++  }, [hotkeys?.globalEnabled, hotkeys?.startTasks, hotkeys?.stopTasks, isMaaRocoProject]);
+ 
+   // 监听托盘菜单事件（开始/停止任务）
+   useEffect(() => {
+diff --git a/src/components/AddTaskPanel.tsx b/src/components/AddTaskPanel.tsx
+index e3c6362..9a36674 100644
+--- a/src/components/AddTaskPanel.tsx
++++ b/src/components/AddTaskPanel.tsx
+@@ -14,6 +14,8 @@ import {
+ } from 'lucide-react';
+ import { useAppStore } from '@/stores/appStore';
+ import { maaService } from '@/services/maaService';
++import { taskStartService } from '@/services/taskStartService';
++import { TASK_DOCK_MIME } from '@/utils/taskDock';
+ import { useResolvedContent } from '@/services/contentResolver';
+ import { loggers, generateTaskPipelineOverride } from '@/utils';
+ import { getInterfaceLangKey } from '@/i18n';
+@@ -53,6 +55,7 @@ function TaskButton({
+   incompatibleReason,
+   supportedControllerHint,
+   onClick,
++  draggable,
+ }: {
+   task: TaskItem;
+   count: number;
+@@ -64,6 +67,7 @@ function TaskButton({
+   incompatibleReason?: string;
+   supportedControllerHint?: string;
+   onClick: () => void;
++  draggable?: boolean;
+ }) {
+   const { t } = useTranslation();
+   const { resolveI18nText, interfaceTranslations } = useAppStore();
+@@ -115,6 +119,11 @@ function TaskButton({
+     <Tooltip content={tooltipContent} side="top" align="center" maxWidth="max-w-xs">
+       <button
+         onClick={() => !disabled && onClick()}
++        draggable={draggable && !disabled}
++        onDragStart={(event) => {
++          event.dataTransfer.setData(TASK_DOCK_MIME, task.name);
++          event.dataTransfer.effectAllowed = 'copy';
++        }}
+         className={clsx(
+           'relative flex min-w-0 items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left',
+           disabled
+@@ -271,6 +280,7 @@ export function AddTaskPanel() {
+    */
+   const handleAddSpecialTask = async (specialTask: MxuSpecialTaskDefinition) => {
+     if (!instance) return;
++    if (projectInterface?.name === 'MaaRoco' && instance.isRunning) return;
+ 
+     // 收起添加任务面板
+     setShowAddTaskPanel(false);
+@@ -338,6 +348,19 @@ export function AddTaskPanel() {
+ 
+     const task = projectInterface.task.find((t) => t.name === taskName);
+     if (!task) return;
++    if (instance.maarocoMode === 'single') {
++      const existing = instance.selectedTasks.find((selected) => selected.taskName === taskName);
++      if (!existing) addTaskToInstance(instance.id, task);
++      const targetTask =
++        existing ||
++        useAppStore
++          .getState()
++          .getActiveInstance()
++          ?.selectedTasks.find((selected) => selected.taskName === taskName);
++      if (targetTask) await taskStartService.runSingle(instance.id, targetTask.id);
++      return;
++    }
++    if (projectInterface.name === 'MaaRoco' && instance.isRunning) return;
+ 
+     // 收起添加任务面板
+     setShowAddTaskPanel(false);
+@@ -400,6 +423,7 @@ export function AddTaskPanel() {
+   // 在连接 Controller 之前执行，因此不支持运行中追加。
+   const handleAddPretask = (item: PretaskItem) => {
+     if (!instance || !projectInterface) return;
++    if (instance.isRunning) return;
+ 
+     setShowAddTaskPanel(false);
+ 
+@@ -511,7 +535,13 @@ export function AddTaskPanel() {
+               label={label}
+               langKey={langKey}
+               basePath={basePath}
+-              disabled={isIncompatible}
++              disabled={
++                isIncompatible ||
++                (projectInterface?.name === 'MaaRoco' &&
++                  instance?.maarocoMode !== 'single' &&
++                  instance?.isRunning)
++              }
++              draggable={!instance?.isRunning && instance?.maarocoMode !== 'single'}
+               incompatibleReason={reason}
+               supportedControllerHint={supportedControllerHint}
+               onClick={() => handleAddTask(task.name)}
+@@ -543,7 +573,8 @@ export function AddTaskPanel() {
+               label={label}
+               langKey={langKey}
+               basePath={basePath}
+-              disabled={isIncompatible}
++              disabled={isIncompatible || instance?.isRunning}
++              draggable={!instance?.isRunning && instance?.maarocoMode !== 'single'}
+               incompatibleReason={reason}
+               supportedControllerHint={supportedControllerHint}
+               onClick={() => handleAddPretask(item)}
+@@ -806,7 +837,7 @@ export function AddTaskPanel() {
+               </div>
+             )}
+ 
+-            {instance && (
++            {instance && instance.maarocoMode !== 'single' && (
+               <div>
+                 {renderSectionHeader(
+                   t('addTaskPanel.specialTasks'),
+@@ -840,6 +871,12 @@ export function AddTaskPanel() {
+                       return (
+                         <button
+                           key={specialTask.taskName}
++                          disabled={projectInterface?.name === 'MaaRoco' && instance.isRunning}
++                          draggable={!instance.isRunning}
++                          onDragStart={(event) => {
++                            event.dataTransfer.setData(TASK_DOCK_MIME, specialTask.taskName);
++                            event.dataTransfer.effectAllowed = 'copy';
++                          }}
+                           onClick={() => handleAddSpecialTask(specialTask)}
+                           className={clsx(
+                             'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs transition-colors',
+diff --git a/src/components/TabBar.tsx b/src/components/TabBar.tsx
+index db97741..19f3fd8 100644
+--- a/src/components/TabBar.tsx
++++ b/src/components/TabBar.tsx
+@@ -106,6 +106,8 @@ export function TabBar() {
+   };
+ 
+   const requestCloseTabs = (ids: string[], name?: string) => {
++    ids = ids.filter((id) => !instances.find((instance) => instance.id === id)?.maarocoMode);
++    if (ids.length === 0) return;
+     if (confirmBeforeDelete) {
+       if (name !== undefined) {
+         setCloseConfirm({ type: 'single', ids, name });
+@@ -309,7 +311,12 @@ export function TabBar() {
+         },
+       ];
+ 
+-      showMenuAt(position, menuItems);
++      showMenuAt(
++        position,
++        inst?.maarocoMode
++          ? menuItems.filter((item) => ['new', 'duplicate', 'export'].includes(item.id))
++          : menuItems,
++      );
+     },
+     [
+       instances,
+@@ -392,9 +399,11 @@ export function TabBar() {
+                 if (el) tabRefs.current.set(instance.id, el);
+                 else tabRefs.current.delete(instance.id);
+               }}
+-              onMouseDown={(e) => handleMouseDown(e, index)}
++              onMouseDown={(e) => !instance.maarocoMode && handleMouseDown(e, index)}
+               onClick={() => !isClosing && setActiveInstance(instance.id)}
+-              onDoubleClick={(e) => handleDoubleClick(e, instance.id, instance.name)}
++              onDoubleClick={(e) =>
++                !instance.maarocoMode && handleDoubleClick(e, instance.id, instance.name)
++              }
+               onContextMenu={(e) => handleTabContextMenu(e, instance.id, instance.name)}
+               onAnimationEnd={() => {
+                 if (isAnimatingIn) {
+@@ -418,7 +427,7 @@ export function TabBar() {
+               )}
+             >
+               {/* 拖拽手柄 - 单标签时禁用 */}
+-              {editingId !== instance.id && (
++              {!instance.maarocoMode && editingId !== instance.id && (
+                 <div
+                   className={clsx(
+                     'drag-handle p-0.5 transition-opacity',
+@@ -476,10 +485,15 @@ export function TabBar() {
+                   {instance.isRunning && (
+                     <span className="w-2 h-2 rounded-full bg-accent task-running-indicator flex-shrink-0" />
+                   )}
+-                  <span className="flex-1 truncate text-sm" title={t('titleBar.renameInstance')}>
+-                    {instance.name}
++                  <span
++                    className="flex-1 truncate text-sm"
++                    title={instance.maarocoMode ? undefined : t('titleBar.renameInstance')}
++                  >
++                    {instance.maarocoMode
++                      ? t(`maaroco.${instance.maarocoMode === 'single' ? 'singleTab' : 'queueTab'}`)
++                      : instance.name}
+                   </span>
+-                  {!isClosing && (
++                  {!instance.maarocoMode && !isClosing && (
+                     <button
+                       onClick={(e) => handleCloseTab(e, instance.id)}
+                       disabled={instances.length <= 1}
+diff --git a/src/components/TaskItem.tsx b/src/components/TaskItem.tsx
+index e119542..742de1d 100644
+--- a/src/components/TaskItem.tsx
++++ b/src/components/TaskItem.tsx
+@@ -352,6 +352,7 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+   // 获取实例运行状态
+   const instance = instances.find((i) => i.id === instanceId);
+   const isInstanceRunning = instance?.isRunning || false;
++  const isSingleTaskMode = instance?.maarocoMode === 'single';
+ 
+   // 获取任务定义 - 支持 MXU 内置特殊任务与 pretask 前置任务
+   const isMxuTask = isMxuSpecialTask(task.taskName);
+@@ -425,8 +426,8 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+     !isInstanceRunning || taskRunStatus === 'idle' || taskRunStatus === 'pending';
+ 
+   // 判断是否可以调整顺序/删除（实例运行时禁用）
+-  const canReorder = !isInstanceRunning;
+-  const canDelete = !isInstanceRunning;
++  const canReorder = !isInstanceRunning && !isSingleTaskMode;
++  const canDelete = !isInstanceRunning && !isSingleTaskMode;
+ 
+   // 用于追踪选项值变化的 ref（避免首次渲染时触发）
+   const prevOptionValuesRef = useRef<string | null>(null);
+@@ -704,6 +705,14 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+ 
+   const handleNameClick = (e: React.MouseEvent) => {
+     e.stopPropagation();
++    if (isSingleTaskMode) {
++      if (!isIncompatible) {
++        void taskStartService.runSingle(instanceId, task.id).catch((error) => {
++          loggers.task.error('单任务切换失败:', error);
++        });
++      }
++      return;
++    }
+     if (isInstanceRunning || isIncompatible) return;
+     toggleTaskEnabled(instanceId, task.id);
+   };
+@@ -726,6 +735,29 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+ 
+       const instance = getActiveInstance();
+       if (!instance) return;
++      if (instance.maarocoMode === 'single') {
++        showMenu(e, [
++          {
++            id: 'run-single',
++            label: t('contextMenu.runSingleTask'),
++            icon: Play,
++            disabled: isIncompatible,
++            onClick: () => void taskStartService.runSingle(instanceId, task.id),
++          },
++          ...(canExpand
++            ? [
++                {
++                  id: 'expand',
++                  label: t(
++                    task.expanded ? 'contextMenu.collapseOptions' : 'contextMenu.expandOptions',
++                  ),
++                  onClick: () => toggleTaskExpanded(instanceId, task.id),
++                },
++              ]
++            : []),
++        ]);
++        return;
++      }
+ 
+       const tasks = instance.selectedTasks;
+       const taskIndex = tasks.findIndex((t) => t.id === task.id);
+@@ -870,6 +902,7 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+   return (
+     <div
+       ref={setRefs}
++      data-selected-task-id={task.id}
+       style={style}
+       onContextMenu={handleContextMenu}
+       className={clsx(
+@@ -893,44 +926,48 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+       {/* 任务头部 */}
+       <div className="flex items-center gap-2 p-3">
+         {/* 拖拽手柄 */}
+-        <div
+-          {...attributes}
+-          {...(canReorder ? listeners : {})}
+-          className={clsx(
+-            'p-1 rounded',
+-            canReorder
+-              ? 'cursor-grab active:cursor-grabbing hover:bg-bg-hover'
+-              : 'cursor-not-allowed opacity-30',
+-          )}
+-        >
+-          <GripVertical className="w-4 h-4 text-text-muted" />
+-        </div>
++        {!isSingleTaskMode && (
++          <div
++            {...attributes}
++            {...(canReorder ? listeners : {})}
++            className={clsx(
++              'p-1 rounded',
++              canReorder
++                ? 'cursor-grab active:cursor-grabbing hover:bg-bg-hover'
++                : 'cursor-not-allowed opacity-30',
++            )}
++          >
++            <GripVertical className="w-4 h-4 text-text-muted" />
++          </div>
++        )}
+ 
+         {/* 启用复选框 - 运行时或不兼容时禁用 */}
+-        <div
+-          className={clsx(
+-            'flex items-center relative',
+-            isInstanceRunning || isIncompatible ? 'opacity-50' : '',
+-          )}
+-          title={
+-            isIncompatible
+-              ? incompatibleReason
+-              : checkboxState === 'once'
+-                ? t('taskItem.runOnceHint')
+-                : undefined
+-          }
+-        >
+-          <TriStateCheckbox
+-            state={checkboxState}
+-            disabled={isInstanceRunning || isIncompatible}
+-            onClick={handleCheckboxClick}
+-            onContextMenu={handleCheckboxContextMenu}
+-          />
+-          {/* 不兼容警告图标 */}
+-          {isIncompatible && (
+-            <AlertCircle className="w-3.5 h-3.5 text-warning absolute -top-1 -right-1 pointer-events-none" />
+-          )}
+-        </div>
++        {!isSingleTaskMode && (
++          <div
++            className={clsx(
++              'flex items-center relative',
++              isInstanceRunning || isIncompatible ? 'opacity-50' : '',
++            )}
++            title={
++              isIncompatible
++                ? incompatibleReason
++                : checkboxState === 'once'
++                  ? t('taskItem.runOnceHint')
++                  : undefined
++            }
++          >
++            <TriStateCheckbox
++              state={checkboxState}
++              disabled={isInstanceRunning || isIncompatible}
++              onClick={handleCheckboxClick}
++              onContextMenu={handleCheckboxContextMenu}
++            />
++            {/* 不兼容警告图标 */}
++            {isIncompatible && (
++              <AlertCircle className="w-3.5 h-3.5 text-warning absolute -top-1 -right-1 pointer-events-none" />
++            )}
++          </div>
++        )}
+ 
+         {/* 任务名称 + 展开区域容器 */}
+         <div className="flex-1 flex items-center min-w-0">
+@@ -948,15 +985,31 @@ export function TaskItem({ instanceId, task }: TaskItemProps) {
+               <div
+                 className={clsx(
+                   'flex items-center gap-1 min-w-0 overflow-hidden',
+-                  isInstanceRunning || isIncompatible ? 'cursor-not-allowed' : 'cursor-pointer',
++                  (!isSingleTaskMode && isInstanceRunning) || isIncompatible
++                    ? 'cursor-not-allowed'
++                    : 'cursor-pointer',
+                 )}
+                 onClick={handleNameClick}
+-                title={t('taskItem.clickToToggle')}
++                title={t(isSingleTaskMode ? 'maaroco.clickToRun' : 'taskItem.clickToToggle')}
++                role="button"
++                tabIndex={0}
++                onKeyDown={(event) => {
++                  if (event.key === 'Enter' || event.key === ' ') {
++                    event.preventDefault();
++                    if (isSingleTaskMode && !isIncompatible) {
++                      void taskStartService.runSingle(instanceId, task.id).catch((error) => {
++                        loggers.task.error('单任务切换失败:', error);
++                      });
++                    } else if (!isInstanceRunning && !isIncompatible) {
++                      toggleTaskEnabled(instanceId, task.id);
++                    }
++                  }
++                }}
+               >
+                 <span
+                   className={clsx(
+                     'min-w-0 text-sm font-medium truncate',
+-                    task.enabled
++                    isSingleTaskMode || task.enabled
+                       ? 'text-text-primary'
+                       : task.runOnce
+                         ? 'text-accent'
+diff --git a/src/components/TaskList.tsx b/src/components/TaskList.tsx
+index 5820414..39995a9 100644
+--- a/src/components/TaskList.tsx
++++ b/src/components/TaskList.tsx
+@@ -1,4 +1,5 @@
+-import { useCallback, useRef, useEffect } from 'react';
++import { useCallback, useRef, useEffect, useState } from 'react';
++import type { DragEvent as ReactDragEvent } from 'react';
+ import { useTranslation } from 'react-i18next';
+ import {
+   DndContext,
+@@ -46,7 +47,9 @@ import {
+ } from '@/utils/tabExportImport';
+ import { generateId, initializeAllOptionValues, sanitizeOptionValues } from '@/stores/helpers';
+ import { decryptPasswordOptionValues } from '@/utils/passwordOptionValues';
+-import { isPretaskName } from '@/types/pretasks';
++import { isPretaskName, getPretaskItem, buildPretaskDef } from '@/types/pretasks';
++import { getMxuSpecialTask } from '@/types/specialTasks';
++import { getTaskDropIndex, TASK_DOCK_MIME } from '@/utils/taskDock';
+ import { loggers } from '@/utils/logger';
+ import { toast } from 'sonner';
+ import clsx from 'clsx';
+@@ -284,26 +287,78 @@ export function TaskList() {
+     clearLastAddedTaskId,
+     projectInterface,
+     skippedPresetInstanceIds,
++    addTaskToInstance,
++    addMxuSpecialTask,
+   } = useAppStore();
+ 
+   const instance = getActiveInstance();
+   const isInstanceRunning = instance?.isRunning || false;
++  const [dockDropIndex, setDockDropIndex] = useState<number | null>(null);
+   const { state: menuState, showAt: showMenuAt, hide: hideMenu } = useContextMenu();
+   const { importFromClipboard, importFromFile } = useImportConfigActions(instance?.id ?? '');
+ 
+   // 滚动容器引用
+   const scrollContainerRef = useRef<HTMLDivElement>(null);
+ 
++  const handleDockDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
++    if (
++      !instance ||
++      isInstanceRunning ||
++      instance.maarocoMode === 'single' ||
++      !event.dataTransfer.types.includes(TASK_DOCK_MIME)
++    )
++      return;
++    event.preventDefault();
++    event.dataTransfer.dropEffect = 'copy';
++    const cards = Array.from(
++      event.currentTarget.querySelectorAll<HTMLElement>('[data-selected-task-id]'),
++    ).map((element) => {
++      const rect = element.getBoundingClientRect();
++      return {
++        index: instance.selectedTasks.findIndex(
++          (task) => task.id === element.dataset.selectedTaskId,
++        ),
++        top: rect.top,
++        height: rect.height,
++      };
++    });
++    setDockDropIndex(getTaskDropIndex(event.clientY, cards, instance.selectedTasks.length));
++  };
++
++  const handleDockDrop = (event: ReactDragEvent<HTMLDivElement>) => {
++    setDockDropIndex(null);
++    if (!instance || isInstanceRunning || instance.maarocoMode === 'single') return;
++    const taskName = event.dataTransfer.getData(TASK_DOCK_MIME);
++    if (!taskName) return;
++    event.preventDefault();
++    const index = dockDropIndex ?? instance.selectedTasks.length;
++    const taskDef = projectInterface?.task.find((task) => task.name === taskName);
++    const pretask = getPretaskItem(projectInterface, taskName);
++    if (taskDef || pretask) {
++      addTaskToInstance(instance.id, taskDef ?? buildPretaskDef(pretask!), { insertIndex: index });
++    } else if (getMxuSpecialTask(taskName)) {
++      addMxuSpecialTask(instance.id, taskName);
++      reorderTasks(instance.id, instance.selectedTasks.length, index);
++    }
++  };
++
++  const dockDropHandlers = {
++    onDragOver: handleDockDragOver,
++    onDrop: handleDockDrop,
++    onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => {
++      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDockDropIndex(null);
++    },
++  };
++
+   // 当添加新任务后自动滚动到底部
+   useEffect(() => {
+     if (lastAddedTaskId && scrollContainerRef.current) {
+       // 使用 requestAnimationFrame 确保 DOM 已更新
+       requestAnimationFrame(() => {
+-        // 使用 instant 避免与任务入场动画冲突产生视觉跳动
+-        scrollContainerRef.current?.scrollTo({
+-          top: scrollContainerRef.current.scrollHeight,
+-          behavior: 'instant',
+-        });
++        // 插入列表中间时显示新卡片，保留落点附近的滚动位置。
++        scrollContainerRef.current
++          ?.querySelector<HTMLElement>(`[data-selected-task-id="${CSS.escape(lastAddedTaskId)}"]`)
++          ?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+       });
+       // 清除标记，避免重复触发
+       clearLastAddedTaskId();
+@@ -503,14 +558,18 @@ export function TaskList() {
+   if (tasks.length === 0 && !showPreActions) {
+     return (
+       <>
+-        <div className="flex-1 overflow-y-auto" onContextMenu={handleListContextMenu}>
++        <div
++          className="flex-1 overflow-y-auto"
++          onContextMenu={handleListContextMenu}
++          {...dockDropHandlers}
++        >
+           {hasPresets ? (
+             <PresetSelector instanceId={instance.id} />
+           ) : (
+             <div className="h-full flex flex-col items-center justify-center text-text-muted gap-3">
+               <ListTodo className="w-12 h-12 opacity-30" />
+               <p className="text-sm">{t('taskList.noTasks')}</p>
+-              <p className="text-xs">{t('taskList.dragToReorder')}</p>
++              <p className="text-xs">{t('maaroco.dragFromDock')}</p>
+               <ImportConfigButton instanceId={instance.id} />
+             </div>
+           )}
+@@ -528,6 +587,7 @@ export function TaskList() {
+         <div
+           className="flex-1 flex flex-col overflow-y-auto p-3 gap-2"
+           onContextMenu={handleListContextMenu}
++          {...dockDropHandlers}
+         >
+           {showPreActions && (
+             <DndContext
+@@ -582,8 +642,12 @@ export function TaskList() {
+         className="flex-1 overflow-y-auto overflow-x-hidden p-3"
+         onClick={() => showAddTaskPanel && setShowAddTaskPanel(false)}
+         onContextMenu={handleListContextMenu}
++        {...dockDropHandlers}
+       >
+         <div className="space-y-2">
++          {instance.maarocoMode === 'single' && (
++            <p className="px-1 pb-1 text-xs text-text-muted">{t('maaroco.singleHint')}</p>
++          )}
+           {/* 前置任务（pretask）卡片：位于前置程序之上 */}
+           {pretaskTasks.length > 0 && (
+             <DndContext
+@@ -645,11 +709,17 @@ export function TaskList() {
+             >
+               <div className="space-y-2">
+                 {normalTasks.map((task) => (
+-                  <TaskItem key={task.id} instanceId={instance.id} task={task} />
++                  <div key={task.id}>
++                    {dockDropIndex === tasks.indexOf(task) && (
++                      <div className="h-0.5 bg-accent rounded mb-2" />
++                    )}
++                    <TaskItem instanceId={instance.id} task={task} />
++                  </div>
+                 ))}
+               </div>
+             </SortableContext>
+           </DndContext>
++          {dockDropIndex === tasks.length && <div className="h-0.5 bg-accent rounded" />}
+         </div>
+       </div>
+       {menuState.isOpen && (
+diff --git a/src/components/Toolbar.tsx b/src/components/Toolbar.tsx
+index 644006d..54cea70 100644
+--- a/src/components/Toolbar.tsx
++++ b/src/components/Toolbar.tsx
+@@ -61,6 +61,7 @@ import { stopInstanceTasks } from '@/services/taskStopService';
+ import { taskStartService, type TaskStartOptions } from '@/services/taskStartService';
+ import { isTaskSelectedForRun, filterTasksForRun } from '@/utils/taskRunFilter';
+ import { isTauri } from '@/utils/paths';
++import { getMaaRocoErrorKey } from '@/utils/maarocoErrors';
+ import { onStateChanged } from '@/services/wsService';
+ import { buildPiEnvVars } from '@/utils/piEnv';
+ import {
+@@ -205,6 +206,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+   const preActionStopRequestedRef = useRef(false);
+   const lastStartCancelledRef = useRef(false);
+   const startingRef = useRef(false);
++  const stopRevisionRef = useRef(0);
+ 
+   const instance = getActiveInstance();
+   const tasks = instance?.selectedTasks || [];
+@@ -241,7 +243,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+   }, [tasks, projectInterface, currentControllerName, currentResourceName]);
+ 
+   // 只要有启用的任务就可以运行（连接和资源加载会在 startTasksForInstance 中自动处理）
+-  const canRun = tasks.some(isTaskSelectedForRun);
++  const canRun = instance?.maarocoMode !== 'single' && tasks.some(isTaskSelectedForRun);
+ 
+   const handleSelectAll = () => {
+     if (!instance) return;
+@@ -323,6 +325,15 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+       const { schedulePolicyName, onPhaseChange, startFromTaskId, singleTaskId } = options || {};
+       const targetId = targetInstance.id;
+       const targetTasks = targetInstance.selectedTasks || [];
++      const startStopRevision = stopRevisionRef.current;
++      const autoController =
++        projectInterface?.name === 'MaaRoco' &&
++        projectInterface?.controller.some((controller) => controller.type === 'Win32');
++      const checkStartCancelled = () => {
++        if (options?.isCancelled?.() || startStopRevision !== stopRevisionRef.current) {
++          throw new Error(PRE_ACTION_CANCELLED_ERROR);
++        }
++      };
+       lastStartCancelledRef.current = false;
+ 
+       const failStart = (reason: string): false => {
+@@ -334,6 +345,9 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+       };
+ 
+       const tasksToRun = filterTasksForRun(targetTasks, { startFromTaskId, singleTaskId });
++      if (targetInstance.maarocoMode === 'single' && !singleTaskId) {
++        return failStart(t('maaroco.clickToRun'));
++      }
+       if (tasksToRun.length === 0) {
+         if (singleTaskId || startFromTaskId) {
+           return failStart(t('taskList.autoConnect.taskNotFound'));
+@@ -438,6 +452,10 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+       if (!controller) {
+         return failStart(t('errors.controllerNotFound'));
+       }
++      if (autoController && controller.permission_required && !(await maaService.isElevated())) {
++        setShowPermissionModal(true);
++        return false;
++      }
+ 
+       // 只有依赖 Windows 交互式桌面的实际控制器才受锁屏限制。
+       // ADB、Linux 和 PlayCover 均可在锁屏时运行。
+@@ -464,6 +482,23 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+       }
+ 
+       try {
++        checkStartCancelled();
++        if (projectInterface?.name === 'MaaRoco') {
++          for (const running of useAppStore
++            .getState()
++            .instances.filter((instance) => instance.isRunning && instance.id !== targetId)) {
++            if (!(await stopInstanceTasks(running.id)))
++              return failStart(t('taskList.stoppingTasks'));
++            checkStartCancelled();
++          }
++        }
++        if (autoController) {
++          await ensureMaaInitialized();
++          await maaService.createInstance(targetId).catch((error) => {
++            log.debug('MaaRoco实例已存在:', error);
++          });
++          checkStartCancelled();
++        }
+         let needsReconnect = false;
+         let shouldDelayAfterAdbConnected = false;
+ 
+@@ -745,7 +780,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+         }
+ 
+         // 查询后端真实连接状态，纠正前端可能过时的缓存
+-        if (isTargetConnected && !needsReconnect) {
++        if (!autoController && isTargetConnected && !needsReconnect) {
+           const backendState = await maaService.getInstanceState(targetId);
+           if (!backendState || backendState.connectionStatus !== 'Connected') {
+             log.warn(
+@@ -757,7 +792,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+         }
+ 
+         // 如果未连接（或需要重连），尝试自动连接
+-        if (!isTargetConnected || needsReconnect) {
++        if (!autoController && (!isTargetConnected || needsReconnect)) {
+           const controllerType = controller?.type;
+ 
+           await ensureMaaInitialized();
+@@ -1090,6 +1125,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+         }
+ 
+         // 查询后端真实状态，纠正前端可能过时的缓存
++        checkStartCancelled();
+         const backendState = await maaService.getInstanceState(targetId);
+         if (backendState && !backendState.resourceLoaded && instanceResourceLoaded[targetId]) {
+           log.warn(
+@@ -1131,6 +1167,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+         }
+ 
+         onPhaseChange?.('idle');
++        checkStartCancelled();
+ 
+         // 构建可运行任务列表（排除无法找到定义的任务）
+         // 这确保了 taskConfigs、taskIds 和 runnableTasks 的索引对齐
+@@ -1227,6 +1264,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+ 
+         // 任务可能在 startTasks 返回前就瞬时结束，先启动全局回调缓存再提交。
+         await startGlobalCallbackListener();
++        checkStartCancelled();
+ 
+         const startedTaskIds = await maaService.startTasks(
+           targetId,
+@@ -1244,6 +1282,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+             useAppStore.getState().globalOptionValues,
+             projectInterface?.option ?? {},
+           ),
++          autoController,
+         );
+ 
+         startedTaskIds.forEach((maaTaskId, index) => {
+@@ -1271,17 +1310,24 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+         log.error(`实例 ${targetInstance.name}: 任务启动异常:`, err);
+ 
+         const errMsg = err instanceof Error ? err.message : String(err);
+-        const cancelled = errMsg === PRE_ACTION_CANCELLED_ERROR;
++        const errorKey = getMaaRocoErrorKey(errMsg);
++        const cancelled =
++          errMsg === PRE_ACTION_CANCELLED_ERROR ||
++          options?.isCancelled?.() ||
++          startStopRevision !== stopRevisionRef.current ||
++          errorKey === 'maaroco.errors.queueCancelled';
+         if (!cancelled) {
+-          const localizedErrMsg = errMsg
+-            .replace(
+-              ' [[hint:spawn_file_not_found]]',
+-              ` ${t('taskList.autoConnect.agentSpawnHintFileNotFound')}`,
+-            )
+-            .replace(
+-              ' [[hint:spawn_app_control]]',
+-              ` ${t('taskList.autoConnect.agentSpawnHintAppControl')}`,
+-            );
++          const localizedErrMsg = errorKey
++            ? t(errorKey)
++            : errMsg
++                .replace(
++                  ' [[hint:spawn_file_not_found]]',
++                  ` ${t('taskList.autoConnect.agentSpawnHintFileNotFound')}`,
++                )
++                .replace(
++                  ' [[hint:spawn_app_control]]',
++                  ` ${t('taskList.autoConnect.agentSpawnHintAppControl')}`,
++                );
+           addLog(targetId, {
+             type: 'error',
+             message: `${t('taskList.autoConnect.startFailed')}: ${localizedErrMsg}`,
+@@ -1437,6 +1483,8 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+    * handleStartStop 和 handleStopTasks 共用此逻辑以保持行为一致。
+    */
+   const performStop = async (targetInstanceId: string): Promise<boolean> => {
++    stopRevisionRef.current += 1;
++    taskStartService.cancelPending();
+     if (isStopping) return false;
+     setIsStopping(true);
+     let keepStoppingForPreAction = false;
+@@ -1579,6 +1627,8 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+     };
+ 
+     const handleStopTasks = async (evt: Event) => {
++      stopRevisionRef.current += 1;
++      taskStartService.cancelPending();
+       const storeState = useAppStore.getState();
+       const runningInstance =
+         storeState.instances.find((i) => i.isRunning) ||
+@@ -1638,6 +1688,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+ 
+   // 获取启动按钮的文本
+   const getStartButtonText = () => {
++    if (instance?.maarocoMode === 'single') return t('maaroco.clickToRun');
+     if (isStarting) {
+       switch (autoConnectPhase) {
+         case 'searching':
+@@ -1787,7 +1838,7 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
+           ) : (
+             <>
+               <Play className="w-4 h-4" />
+-              <span>{t('taskList.startTasks')}</span>
++              <span>{getStartButtonText()}</span>
+             </>
+           )}
+         </button>
+diff --git a/src/components/settings/HotkeySection.tsx b/src/components/settings/HotkeySection.tsx
+index 85a6b75..8b42303 100644
+--- a/src/components/settings/HotkeySection.tsx
++++ b/src/components/settings/HotkeySection.tsx
+@@ -7,6 +7,7 @@ import { DesktopOnlyWrapper } from '@/components/ui/DesktopOnlyWrapper';
+ export function HotkeySection() {
+   const { t } = useTranslation();
+   const { hotkeys, setHotkeys } = useAppStore();
++  const fixedStopHotkey = useAppStore((state) => state.projectInterface?.name === 'MaaRoco');
+   const globalHotkeyError = useAppStore((state) => state.globalHotkeyError);
+ 
+   return (
+@@ -55,6 +56,7 @@ export function HotkeySection() {
+                 type="text"
+                 readOnly
+                 value={hotkeys.stopTasks}
++                disabled={fixedStopHotkey}
+                 placeholder="F11"
+                 onKeyDown={(e) => {
+                   e.preventDefault();
+@@ -105,6 +107,7 @@ export function HotkeySection() {
+               </div>
+             </div>
+             <SwitchButton
++              disabled={fixedStopHotkey}
+               value={hotkeys.globalEnabled ?? false}
+               onChange={(v) => setHotkeys({ ...hotkeys, globalEnabled: v })}
+             />
+diff --git a/src/components/settings/UpdateSection.tsx b/src/components/settings/UpdateSection.tsx
+index bd9aaf3..f415c67 100644
+--- a/src/components/settings/UpdateSection.tsx
++++ b/src/components/settings/UpdateSection.tsx
+@@ -309,12 +309,15 @@ export function UpdateSection() {
+ 
+   // 检查更新
+   const handleCheckUpdate = async () => {
+-    if (!projectInterface?.mirrorchyan_rid || !projectInterface?.version) {
++    if (
++      (!projectInterface?.mirrorchyan_rid && projectInterface?.name !== 'MaaRoco') ||
++      !projectInterface?.version
++    ) {
+       addDebugLog('未配置 mirrorchyan_rid 或 version，无法检查更新');
+       return;
+     }
+ 
+-    if (import.meta.env.DEV) {
++    if (isDebugMode) {
+       addDebugLog('MXU 开发模式，跳过检查更新');
+       return;
+     }
+@@ -325,7 +328,7 @@ export function UpdateSection() {
+ 
+     try {
+       const result = await checkAndPrepareDownload({
+-        resourceId: projectInterface.mirrorchyan_rid,
++        resourceId: projectInterface.mirrorchyan_rid || '',
+         currentVersion: projectInterface.version,
+         cdk: mirrorChyanSettings.cdk || undefined,
+         channel: mirrorChyanSettings.channel,
+@@ -363,7 +366,7 @@ export function UpdateSection() {
+     }
+   };
+ 
+-  if (!projectInterface?.mirrorchyan_rid) {
++  if (!projectInterface?.mirrorchyan_rid && projectInterface?.name !== 'MaaRoco') {
+     return null;
+   }
+ 
+diff --git a/src/i18n/locales/en-US.ts b/src/i18n/locales/en-US.ts
+index 154e625..eb4dc2f 100644
+--- a/src/i18n/locales/en-US.ts
++++ b/src/i18n/locales/en-US.ts
+@@ -1,4 +1,19 @@
+ export default {
++  maaroco: {
++    singleTab: 'Single task',
++    queueTab: 'Task queue',
++    clickToRun: 'Click a task name to run',
++    singleHint:
++      'Click a task to run it. Selecting another task stops the current task first. F11 stops tasks globally.',
++    dragFromDock: 'Drag tasks from the task panel to insert them at the drop position',
++    errors: {
++      gameWindowMissing: 'The Roco Kingdom World window was not found. Run Launch Game first.',
++      desktopWindowMissing: 'The Windows desktop window was not found. Launch Game cannot run.',
++      connectionTimeout:
++        'The Interception controller connection timed out. Check the driver and administrator permissions.',
++      queueCancelled: 'Tasks stopped.',
++    },
++  },
+   // Common
+   common: {
+     confirm: 'Confirm',
+diff --git a/src/i18n/locales/ja-JP.ts b/src/i18n/locales/ja-JP.ts
+index 15e63a1..e576b97 100644
+--- a/src/i18n/locales/ja-JP.ts
++++ b/src/i18n/locales/ja-JP.ts
+@@ -1,4 +1,20 @@
+ export default {
++  maaroco: {
++    singleTab: '単一タスク',
++    queueTab: 'タスクキュー',
++    clickToRun: 'タスク名をクリックして実行',
++    singleHint:
++      'タスク名をクリックすると実行します。別のタスクを選ぶと実行中のタスクを停止して切り替えます。F11 でグローバル停止。',
++    dragFromDock: 'タスクパネルからドラッグしてドロップ位置に挿入します',
++    errors: {
++      gameWindowMissing:
++        'Roco Kingdom World のウィンドウが見つかりません。先にゲーム起動タスクを実行してください。',
++      desktopWindowMissing: 'Windows デスクトップが見つからないため、ゲームを起動できません。',
++      connectionTimeout:
++        'Interception コントローラーの接続がタイムアウトしました。ドライバーと管理者権限を確認してください。',
++      queueCancelled: 'タスクを停止しました。',
++    },
++  },
+   // 共通
+   common: {
+     confirm: '確定',
+diff --git a/src/i18n/locales/ko-KR.ts b/src/i18n/locales/ko-KR.ts
+index c3bee79..b6a623c 100644
+--- a/src/i18n/locales/ko-KR.ts
++++ b/src/i18n/locales/ko-KR.ts
+@@ -1,4 +1,20 @@
+ export default {
++  maaroco: {
++    singleTab: '단일 작업',
++    queueTab: '작업 대기열',
++    clickToRun: '작업 이름을 클릭하여 실행',
++    singleHint:
++      '작업 이름을 클릭하면 실행합니다. 다른 작업을 선택하면 현재 작업을 중지한 후 전환합니다. F11 키로 전역 중지합니다.',
++    dragFromDock: '작업 패널에서 끌어 놓은 위치에 작업을 삽입합니다',
++    errors: {
++      gameWindowMissing:
++        'Roco Kingdom World 창을 찾을 수 없습니다. 게임 실행 작업을 먼저 실행하세요.',
++      desktopWindowMissing: 'Windows 바탕 화면 창을 찾을 수 없어 게임을 실행할 수 없습니다.',
++      connectionTimeout:
++        'Interception 컨트롤러 연결 시간이 초과되었습니다. 드라이버와 관리자 권한을 확인하세요.',
++      queueCancelled: '작업이 중지되었습니다.',
++    },
++  },
+   // 공통
+   common: {
+     confirm: '확인',
+diff --git a/src/i18n/locales/zh-CN.ts b/src/i18n/locales/zh-CN.ts
+index 3dca5fc..dd72bc3 100644
+--- a/src/i18n/locales/zh-CN.ts
++++ b/src/i18n/locales/zh-CN.ts
+@@ -1,4 +1,17 @@
+ export default {
++  maaroco: {
++    singleTab: '单任务',
++    queueTab: '任务队列',
++    clickToRun: '点击任务名称即可运行',
++    singleHint: '点击任务名称立即运行；点击其他任务会先停止当前任务再切换。F11 全局停止。',
++    dragFromDock: '从全部任务面板拖入任务，可在指定位置插入',
++    errors: {
++      gameWindowMissing: '未找到洛克王国世界窗口，请先运行启动游戏任务。',
++      desktopWindowMissing: '未找到 Windows 桌面窗口，无法运行启动游戏任务。',
++      connectionTimeout: 'Interception 控制器连接超时，请检查驱动与管理员权限。',
++      queueCancelled: '任务已停止。',
++    },
++  },
+   // 通用
+   common: {
+     confirm: '确定',
+diff --git a/src/i18n/locales/zh-TW.ts b/src/i18n/locales/zh-TW.ts
+index f73ab27..b11bd7d 100644
+--- a/src/i18n/locales/zh-TW.ts
++++ b/src/i18n/locales/zh-TW.ts
+@@ -1,4 +1,17 @@
+ export default {
++  maaroco: {
++    singleTab: '單任務',
++    queueTab: '任務佇列',
++    clickToRun: '點擊任務名稱即可執行',
++    singleHint: '點擊任務名稱立即執行；點擊其他任務會先停止目前任務再切換。F11 全域停止。',
++    dragFromDock: '從全部任務面板拖入任務，可在指定位置插入',
++    errors: {
++      gameWindowMissing: '找不到洛克王國世界視窗，請先執行啟動遊戲任務。',
++      desktopWindowMissing: '找不到 Windows 桌面視窗，無法執行啟動遊戲任務。',
++      connectionTimeout: 'Interception 控制器連線逾時，請檢查驅動程式與系統管理員權限。',
++      queueCancelled: '任務已停止。',
++    },
++  },
+   // 通用
+   common: {
+     confirm: '確定',
+diff --git a/src/services/maaService.ts b/src/services/maaService.ts
+index 62be25e..276b793 100644
+--- a/src/services/maaService.ts
++++ b/src/services/maaService.ts
+@@ -645,6 +645,7 @@ export const maaService = {
+     piEnvs?: Record<string, string>,
+     controllerInfo?: ControllerTelemetryInfo,
+     logRedactSecrets?: string[],
++    autoController?: boolean,
+   ): Promise<number[]> {
+     log.info('启动任务, 实例:', instanceId, ', 任务数:', tasks.length, ', cwd:', cwd || '.');
+     tasks.forEach((task, i) => {
+@@ -674,6 +675,7 @@ export const maaService = {
+           tcp_compat_mode: tcpCompatMode || false,
+           pi_envs: agentConfigs && agentConfigs.length > 0 && piEnvs ? piEnvs : null,
+           controller_info: controllerInfo ?? null,
++          auto_controller: autoController ?? false,
+         },
+       );
+       log.info('任务已提交 (HTTP), taskIds:', result.taskIds);
+@@ -688,6 +690,7 @@ export const maaService = {
+       tcpCompatMode: tcpCompatMode || false,
+       piEnvs: hasAgent && piEnvs ? piEnvs : null,
+       controllerInfo: controllerInfo ?? null,
++      autoController: autoController ?? false,
+     });
+     log.info('任务已提交, taskIds:', taskIds);
+     return taskIds;
+diff --git a/src/services/taskStartService.ts b/src/services/taskStartService.ts
+index 68a6a8f..9127b42 100644
+--- a/src/services/taskStartService.ts
++++ b/src/services/taskStartService.ts
+@@ -1,5 +1,8 @@
+ import type { Instance } from '@/types/interface';
+ import type { TaskRunFilterOptions } from '@/utils/taskRunFilter';
++import { createLatestTaskRequest } from '@/utils/latestTaskRequest';
++import { useAppStore } from '@/stores/appStore';
++import { stopInstanceTasks } from './taskStopService';
+ 
+ export type AutoConnectPhase = 'idle' | 'searching' | 'connecting' | 'loading_resource';
+ 
+@@ -8,11 +11,14 @@ export interface TaskStartOptions extends TaskRunFilterOptions {
+   schedulePolicyName?: string;
+   /** 自动连接阶段变化回调（用于 UI 状态更新） */
+   onPhaseChange?: (phase: AutoConnectPhase) => void;
++  /** 用户切换目标或全局停止后，阻止尚在准备中的任务启动 */
++  isCancelled?: () => boolean;
+ }
+ 
+ export type TaskStartHandler = (instance: Instance, options?: TaskStartOptions) => Promise<boolean>;
+ 
+ let handler: TaskStartHandler | null = null;
++const singleTaskRequests = createLatestTaskRequest();
+ 
+ export const taskStartService = {
+   setHandler(fn: TaskStartHandler | null) {
+@@ -23,4 +29,26 @@ export const taskStartService = {
+     if (!handler) return false;
+     return handler(instance, options);
+   },
++
++  cancelPending() {
++    singleTaskRequests.cancel();
++  },
++
++  runSingle(instanceId: string, taskId: string): Promise<boolean> {
++    return singleTaskRequests.run(async (isCancelled) => {
++      const state = useAppStore.getState();
++      const target = state.instances.find((instance) => instance.id === instanceId);
++      if (!target || !handler) return false;
++      if (target.isRunning && state.instanceTaskRunStatus[instanceId]?.[taskId] === 'running') {
++        return true;
++      }
++      for (const running of state.instances.filter((instance) => instance.isRunning)) {
++        if (!(await stopInstanceTasks(running.id))) return false;
++        if (isCancelled()) return false;
++      }
++      const latestTarget = useAppStore.getState().instances.find((i) => i.id === instanceId);
++      if (!latestTarget || isCancelled()) return false;
++      return handler(latestTarget, { singleTaskId: taskId, isCancelled });
++    });
++  },
+ };
+diff --git a/src/services/updateService.ts b/src/services/updateService.ts
+index b98f555..07c0879 100644
+--- a/src/services/updateService.ts
++++ b/src/services/updateService.ts
+@@ -401,6 +401,9 @@ export async function checkUpdate(options: CheckUpdateOptions): Promise<UpdateIn
+  * - 版本号包含预发布标签，且不是 beta 或 rc（如 v2.0.2-ci.123、v1.0.0-alpha.1）
+  */
+ export function isDebugVersion(version: string | undefined): boolean {
++  if (useAppStore.getState().projectInterface?.name === 'MaaRoco') {
++    return !version || !/^v\d+\.\d+\.\d+$/.test(version);
++  }
+   if (!version) return false;
+   if (version === 'DEBUG_VERSION') return true;
+ 
+@@ -872,6 +875,35 @@ export interface CheckAndDownloadOptions extends CheckUpdateOptions {
+ export async function checkAndPrepareDownload(
+   options: CheckAndDownloadOptions,
+ ): Promise<UpdateInfo | null> {
++  if (options.projectName === 'MaaRoco') {
++    if (import.meta.env.DEV || !/^v\d+\.\d+\.\d+$/.test(options.currentVersion)) return null;
++    const repo = options.githubUrl ? parseGitHubUrl(options.githubUrl) : null;
++    if (!repo || isDownloading) return null;
++    const release = await getGitHubReleaseByVersion(
++      repo.owner,
++      repo.repo,
++      '__latest_stable__',
++      options.githubPat,
++      options.proxyUrl,
++    );
++    if (!release) return null;
++    const asset = await matchGitHubAsset(
++      release.assets.filter((candidate) =>
++        /^MaaRoco-win-x86_64-v\d+\.\d+\.\d+\.zip$/.test(candidate.name),
++      ),
++    );
++    return {
++      versionName: release.tag_name,
++      hasUpdate: compareVersions(release.tag_name, options.currentVersion) > 0,
++      releaseNote: release.body || '',
++      channel: 'stable',
++      updateType: 'full',
++      downloadUrl: asset?.browser_download_url,
++      fileSize: asset?.size,
++      filename: asset?.name,
++      downloadSource: asset ? 'github' : undefined,
++    };
++  }
+   // 正在下载时不允许检查更新
+   if (isDownloading) {
+     log.info('正在下载更新，跳过检查更新');
+diff --git a/src/stores/appStore.ts b/src/stores/appStore.ts
+index c90b581..e4d59ef 100644
+--- a/src/stores/appStore.ts
++++ b/src/stores/appStore.ts
+@@ -76,6 +76,7 @@ import {
+ } from './helpers';
+ import { persistRuntimeLogs } from '@/utils/runtimeLogPersistence';
+ import { cacheTaskEnabledForController } from '@/utils/taskControllerCache';
++import { normalizeMaaRocoTabs } from '@/utils/maarocoTabs';
+ // 从独立模块导入类型和辅助函数
+ import type { AppState, LogEntry, TaskRunStatus } from './types';
+ 
+@@ -347,7 +348,18 @@ export const useAppStore = create<AppState>()(
+       startTasks: 'F10',
+       stopTasks: 'F11',
+     },
+-    setHotkeys: (hotkeys) => set({ hotkeys }),
++    setHotkeys: (hotkeys) =>
++      set({
++        hotkeys:
++          get().projectInterface?.name === 'MaaRoco'
++            ? {
++                ...hotkeys,
++                startTasks: hotkeys.startTasks === 'F11' ? 'F10' : hotkeys.startTasks,
++                stopTasks: 'F11',
++                globalEnabled: true,
++              }
++            : hotkeys,
++      }),
+ 
+     // 全局快捷键注册失败信息（不落盘，仅本次运行）
+     globalHotkeyError: null,
+@@ -475,6 +487,7 @@ export const useAppStore = create<AppState>()(
+     },
+ 
+     removeInstance: (id) => {
++      if (get().instances.find((instance) => instance.id === id)?.maarocoMode) return;
+       get().clearControllerRuntimeState(id);
+ 
+       set((state) => {
+@@ -555,7 +568,9 @@ export const useAppStore = create<AppState>()(
+ 
+     renameInstance: (id, newName) =>
+       set((state) => ({
+-        instances: state.instances.map((i) => (i.id === id ? { ...i, name: newName } : i)),
++        instances: state.instances.map((i) =>
++          i.id === id && !i.maarocoMode ? { ...i, name: newName } : i,
++        ),
+       })),
+ 
+     reorderInstances: (oldIndex, newIndex) =>
+@@ -599,9 +614,12 @@ export const useAppStore = create<AppState>()(
+             ? {
+                 ...i,
+                 // prepend: pretask 等前置任务固定置于列表顶部
+-                selectedTasks: options?.prepend
+-                  ? [newTask, ...i.selectedTasks]
+-                  : [...i.selectedTasks, newTask],
++                selectedTasks: (() => {
++                  const tasks = [...i.selectedTasks];
++                  const index = options?.insertIndex ?? (options?.prepend ? 0 : tasks.length);
++                  tasks.splice(Math.max(0, Math.min(index, tasks.length)), 0, newTask);
++                  return tasks;
++                })(),
+               }
+             : i,
+         ),
+@@ -1127,6 +1145,7 @@ export const useAppStore = create<AppState>()(
+ 
+       const newInstance: Instance = {
+         ...sourceInstance,
++        maarocoMode: undefined,
+         id: newId,
+         name: `${sourceInstance.name}${i18n.t('common.copySuffix')}`,
+         selectedTasks: sourceInstance.selectedTasks.map((t) => ({
+@@ -1371,6 +1390,7 @@ export const useAppStore = create<AppState>()(
+         return {
+           id: inst.id,
+           name: inst.name,
++          maarocoMode: inst.maarocoMode,
+           controllerId: inst.controllerId,
+           resourceId: inst.resourceId,
+           controllerName: inst.controllerName,
+@@ -1383,6 +1403,33 @@ export const useAppStore = create<AppState>()(
+         };
+       });
+ 
++      if (pi?.name === 'MaaRoco') {
++        const allTasks: SelectedTask[] = pi.task.map((task) => ({
++          id: generateId(),
++          taskName: task.name,
++          enabled: Boolean(task.default_check),
++          expanded: false,
++          optionValues:
++            task.option && pi.option ? initializeAllOptionValues(task.option, pi.option) : {},
++        }));
++        instances.splice(
++          0,
++          instances.length,
++          ...normalizeMaaRocoTabs(
++            instances,
++            allTasks,
++            {
++              single: i18n.t('maaroco.singleTab'),
++              queue: i18n.t('maaroco.queueTab'),
++            },
++            {
++              controllerName: pi.controller[0]?.name,
++              resourceName: pi.resource[0]?.name,
++            },
++          ),
++        );
++      }
++
+       // 恢复选中的控制器和资源状态，同时校验它们在当前 interface 中是否仍然存在
+       const validControllerNames = new Set(pi?.controller.map((c) => c.name) || []);
+       const validResourceNames = new Set(pi?.resource.map((r) => r.name) || []);
+@@ -1505,7 +1552,9 @@ export const useAppStore = create<AppState>()(
+         connectionPanelExpanded:
+           localLayout?.connectionPanelExpanded ?? config.settings.connectionPanelExpanded ?? true,
+         screenshotPanelExpanded:
+-          localLayout?.screenshotPanelExpanded ?? config.settings.screenshotPanelExpanded ?? true,
++          localLayout?.screenshotPanelExpanded ??
++          config.settings.screenshotPanelExpanded ??
++          pi?.name !== 'MaaRoco',
+         screenshotFrameRate:
+           localLayout?.screenshotFrameRate ??
+           config.settings.screenshotFrameRate ??
+@@ -1522,11 +1571,21 @@ export const useAppStore = create<AppState>()(
+         minimizeToTray: config.settings.minimizeToTray ?? false,
+         onboardingCompleted: config.settings.onboardingCompleted ?? false,
+         preActionConnectDelaySec: config.settings.preActionConnectDelaySec ?? 5,
+-        hotkeys: config.settings.hotkeys ?? {
+-          startTasks: 'F10',
+-          stopTasks: 'F11',
+-          globalEnabled: false,
+-        },
++        hotkeys:
++          pi?.name === 'MaaRoco'
++            ? {
++                startTasks:
++                  config.settings.hotkeys?.startTasks === 'F11'
++                    ? 'F10'
++                    : config.settings.hotkeys?.startTasks || 'F10',
++                stopTasks: 'F11',
++                globalEnabled: true,
++              }
++            : (config.settings.hotkeys ?? {
++                startTasks: 'F10',
++                stopTasks: 'F11',
++                globalEnabled: false,
++              }),
+         recentlyClosed: (config.recentlyClosed || []).map((rc) => ({
+           ...rc,
+           tasks: rc.tasks.map((t) =>
+@@ -2421,6 +2480,7 @@ function generateConfig(): MxuConfig {
+     instances: state.instances.map((inst) => ({
+       id: inst.id,
+       name: inst.name,
++      maarocoMode: inst.maarocoMode,
+       controllerId: inst.controllerId,
+       resourceId: inst.resourceId,
+       controllerName: inst.controllerName,
+diff --git a/src/stores/types.ts b/src/stores/types.ts
+index 6ba8cf3..d88f163 100644
+--- a/src/stores/types.ts
++++ b/src/stores/types.ts
+@@ -172,7 +172,7 @@ export interface AppState {
+   addTaskToInstance: (
+     instanceId: string,
+     task: { name: string; option?: string[]; description?: string },
+-    options?: { prepend?: boolean },
++    options?: { prepend?: boolean; insertIndex?: number },
+   ) => void;
+   /** v2.3.0: 应用预设配置到实例 */
+   applyPreset: (instanceId: string, presetName: string) => void;
+diff --git a/src/types/config.ts b/src/types/config.ts
+index 0931274..b757451 100644
+--- a/src/types/config.ts
++++ b/src/types/config.ts
+@@ -59,6 +59,8 @@ export interface LegacyActionConfig {
+ export interface SavedInstance {
+   id: string;
+   name: string;
++  /** MaaRoco 的固定单任务 / 队列标签页 */
++  maarocoMode?: 'single' | 'queue';
+   controllerId?: string;
+   resourceId?: string;
+   // 保存的控制器和资源名称
+diff --git a/src/types/interface.ts b/src/types/interface.ts
+index 0dcc16f..7484f20 100644
+--- a/src/types/interface.ts
++++ b/src/types/interface.ts
+@@ -420,6 +420,8 @@ export interface ActionConfig {
+ export interface Instance {
+   id: string;
+   name: string;
++  /** MaaRoco 的固定单任务 / 队列标签页 */
++  maarocoMode?: 'single' | 'queue';
+   controllerId?: string;
+   resourceId?: string;
+   // 保存的控制器和资源名称
+diff --git a/src/utils/callbackInstance.ts b/src/utils/callbackInstance.ts
+new file mode 100644
+index 0000000..61ab648
+--- /dev/null
++++ b/src/utils/callbackInstance.ts
+@@ -0,0 +1,27 @@
++interface CallbackInstance {
++  id: string;
++  isRunning: boolean;
++}
++
++/** MaaRoco task callbacks belong to the executing tab even when another tab is visible. */
++export function resolveCallbackInstanceId(
++  projectName: string | undefined,
++  activeInstanceId: string | null,
++  instances: readonly CallbackInstance[],
++  taskMappings: Readonly<Record<string, Readonly<Record<number, string>>>>,
++  taskId?: number,
++): string | null {
++  if (projectName !== 'MaaRoco') return activeInstanceId;
++
++  if (taskId !== undefined) {
++    const owners = instances.filter(
++      (instance) => taskMappings[instance.id]?.[taskId] !== undefined,
++    );
++    if (owners.length === 1) return owners[0].id;
++  }
++
++  // A Starting callback can arrive before the backend-state refresh supplies its mapping.
++  const running = instances.filter((instance) => instance.isRunning);
++  if (running.length === 1) return running[0].id;
++  return activeInstanceId;
++}
+diff --git a/src/utils/latestTaskRequest.ts b/src/utils/latestTaskRequest.ts
+new file mode 100644
+index 0000000..2c33b60
+--- /dev/null
++++ b/src/utils/latestTaskRequest.ts
+@@ -0,0 +1,23 @@
++/** Serialize task switches; only the most recent click may start a new task. */
++export function createLatestTaskRequest() {
++  let revision = 0;
++  let pending: Promise<boolean> = Promise.resolve(false);
++
++  return {
++    cancel() {
++      revision += 1;
++    },
++    run(action: (isCancelled: () => boolean) => Promise<boolean>): Promise<boolean> {
++      const requestRevision = ++revision;
++      const isCancelled = () => requestRevision !== revision;
++      const result = pending
++        .catch(() => false)
++        .then(() => {
++          if (isCancelled()) return false;
++          return action(isCancelled);
++        });
++      pending = result;
++      return result;
++    },
++  };
++}
+diff --git a/src/utils/maarocoErrors.ts b/src/utils/maarocoErrors.ts
+new file mode 100644
+index 0000000..ab01a1c
+--- /dev/null
++++ b/src/utils/maarocoErrors.ts
+@@ -0,0 +1,11 @@
++const errorKeys: Record<string, string> = {
++  maaroco_game_window_missing: 'maaroco.errors.gameWindowMissing',
++  maaroco_desktop_window_missing: 'maaroco.errors.desktopWindowMissing',
++  maaroco_controller_connection_timeout: 'maaroco.errors.connectionTimeout',
++  maaroco_queue_cancelled: 'maaroco.errors.queueCancelled',
++};
++
++export function getMaaRocoErrorKey(message: string): string | undefined {
++  const hint = message.match(/\[\[hint:(maaroco_[a-z_]+)\]\]/)?.[1];
++  return hint ? errorKeys[hint] : undefined;
++}
+diff --git a/src/utils/maarocoTabs.ts b/src/utils/maarocoTabs.ts
+new file mode 100644
+index 0000000..7c71bcc
+--- /dev/null
++++ b/src/utils/maarocoTabs.ts
+@@ -0,0 +1,44 @@
++import type { Instance, SelectedTask } from '../types/interface';
++
++/** Restore the two built-in tabs while preserving every custom configuration. */
++export function normalizeMaaRocoTabs(
++  instances: Instance[],
++  allTasks: SelectedTask[],
++  names: { single: string; queue: string },
++  defaults: Pick<Instance, 'controllerName' | 'resourceName'>,
++): Instance[] {
++  const single = instances.find((instance) => instance.maarocoMode === 'single');
++  const queue = instances.find((instance) => instance.maarocoMode === 'queue');
++  const taskNames = new Set(single?.selectedTasks.map((task) => task.taskName));
++  const singleInstance: Instance = {
++    ...defaults,
++    isRunning: false,
++    ...single,
++    id: single?.id ?? 'maaroco-single',
++    name: names.single,
++    maarocoMode: 'single',
++    selectedTasks: [
++      ...(single?.selectedTasks ?? []),
++      ...allTasks.filter((task) => !taskNames.has(task.taskName)),
++    ],
++  };
++  const queueInstance: Instance = {
++    ...defaults,
++    isRunning: false,
++    ...queue,
++    id: queue?.id ?? 'maaroco-queue',
++    name: names.queue,
++    maarocoMode: 'queue',
++    selectedTasks:
++      queue?.selectedTasks ?? allTasks.map((task) => ({ ...task, id: `${task.id}-queue` })),
++  };
++  return [
++    singleInstance,
++    queueInstance,
++    ...instances
++      .filter((instance) => instance !== single && instance !== queue)
++      .map((instance) =>
++        instance.maarocoMode ? { ...instance, maarocoMode: undefined } : instance,
++      ),
++  ];
++}
+diff --git a/src/utils/runtimeLogPersistence.ts b/src/utils/runtimeLogPersistence.ts
+index 9ccf0a6..dea39c4 100644
+--- a/src/utils/runtimeLogPersistence.ts
++++ b/src/utils/runtimeLogPersistence.ts
+@@ -6,7 +6,7 @@ const STORAGE_VERSION = 1;
+ const STORAGE_WRITE_DEBOUNCE_MS = 250;
+ 
+ let pendingPersistedLogsPayload: string | null = null;
+-let pendingPersistedLogsTimeout: ReturnType<typeof window.setTimeout> | null = null;
++let pendingPersistedLogsTimeout: number | null = null;
+ let pendingPersistedLogsIdleCallback: number | null = null;
+ 
+ interface PersistedLogEntry {
+diff --git a/src/utils/taskDock.ts b/src/utils/taskDock.ts
+new file mode 100644
+index 0000000..3df126f
+--- /dev/null
++++ b/src/utils/taskDock.ts
+@@ -0,0 +1,11 @@
++export const TASK_DOCK_MIME = 'application/x-mxu-task';
++
++/** Insert before a card's midpoint, otherwise after the final card. */
++export function getTaskDropIndex(
++  clientY: number,
++  cards: Array<{ index: number; top: number; height: number }>,
++  taskCount: number,
++): number {
++  const next = cards.find((card) => clientY < card.top + card.height / 2);
++  return next ? next.index : taskCount;
++}
+diff --git a/src/utils/useMaaCallbackLogger.ts b/src/utils/useMaaCallbackLogger.ts
+index 7a063a3..5fc22a7 100644
+--- a/src/utils/useMaaCallbackLogger.ts
++++ b/src/utils/useMaaCallbackLogger.ts
+@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react';
+ import { useTranslation } from 'react-i18next';
+ import { maaService, type MaaCallbackDetails } from '@/services/maaService';
+ import { useAppStore, type LogType } from '@/stores/appStore';
++import { getMaaRocoErrorKey } from '@/utils/maarocoErrors';
++import { resolveCallbackInstanceId } from '@/utils/callbackInstance';
+ import { loggers } from '@/utils/logger';
+ import i18n, { getInterfaceLangKey } from '@/i18n';
+ import { getMxuSpecialTask } from '@/types/specialTasks';
+@@ -233,13 +235,19 @@ export function useMaaCallbackLogger() {
+           // 组件已卸载则忽略
+           if (cancelled) return;
+ 
+-          // 获取当前活动实例 ID
+-          const currentActiveId = useAppStore.getState().activeInstanceId;
+-          if (!currentActiveId) return;
++          const state = useAppStore.getState();
++          const callbackInstanceId = resolveCallbackInstanceId(
++            state.projectInterface?.name,
++            state.activeInstanceId,
++            state.instances,
++            state.maaTaskIdMapping,
++            details.task_id,
++          );
++          if (!callbackInstanceId) return;
+ 
+           // 根据消息类型处理
+           handleCallback(
+-            currentActiveId,
++            callbackInstanceId,
+             message,
+             details as MaaCallbackDetails & Record<string, unknown>,
+             t,
+@@ -668,6 +676,15 @@ export function useMaaAgentLogger() {
+ 
+     const handleAgentOutput = (instanceId: string, _stream: string, line: string) => {
+       if (cancelled) return;
++      const errorKey = getMaaRocoErrorKey(line);
++      if (errorKey) {
++        log.warn('MaaRoco task queue:', line);
++        addLog(instanceId, {
++          type: errorKey === 'maaroco.errors.queueCancelled' ? 'warning' : 'error',
++          message: t(errorKey),
++        });
++        return;
++      }
+ 
+       const state = ensureAgentFloodState(instanceId);
+       const now = Date.now();
+diff --git a/tests/maarocoTaskInteraction.test.ts b/tests/maarocoTaskInteraction.test.ts
+new file mode 100644
+index 0000000..c4961ac
+--- /dev/null
++++ b/tests/maarocoTaskInteraction.test.ts
+@@ -0,0 +1,240 @@
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createLatestTaskRequest } from '../src/utils/latestTaskRequest.ts';
++import { getTaskDropIndex } from '../src/utils/taskDock.ts';
++import { filterTasksForRun } from '../src/utils/taskRunFilter.ts';
++import { normalizeMaaRocoTabs } from '../src/utils/maarocoTabs.ts';
++import { getMaaRocoErrorKey } from '../src/utils/maarocoErrors.ts';
++import { resolveCallbackInstanceId } from '../src/utils/callbackInstance.ts';
++
++test('switch requests finish stopping before the latest task starts', async () => {
++  const requests = createLatestTaskRequest();
++  const events: string[] = [];
++  let finishStopping!: () => void;
++  const stopping = new Promise<void>((resolve) => {
++    finishStopping = resolve;
++  });
++  const first = requests.run(async (isCancelled) => {
++    events.push('stop');
++    await stopping;
++    if (isCancelled()) return false;
++    events.push('first');
++    return true;
++  });
++  await Promise.resolve();
++  await Promise.resolve();
++  const second = requests.run(async () => {
++    events.push('second');
++    return true;
++  });
++  const third = requests.run(async () => {
++    events.push('third');
++    return true;
++  });
++  finishStopping();
++  assert.equal(await first, false);
++  assert.equal(await second, false);
++  assert.equal(await third, true);
++  assert.deepEqual(events, ['stop', 'third']);
++});
++
++test('global stop cancels a pending task start', async () => {
++  const requests = createLatestTaskRequest();
++  let release!: () => void;
++  const ready = new Promise<void>((resolve) => {
++    release = resolve;
++  });
++  let started = false;
++  const pending = requests.run(async (isCancelled) => {
++    await ready;
++    if (isCancelled()) return false;
++    started = true;
++    return true;
++  });
++  requests.cancel();
++  release();
++  assert.equal(await pending, false);
++  assert.equal(started, false);
++});
++
++test('a failed request does not block a later switch', async () => {
++  const requests = createLatestTaskRequest();
++  await assert.rejects(
++    requests.run(async () => {
++      throw new Error('stop failed');
++    }),
++  );
++  assert.equal(await requests.run(async () => true), true);
++});
++
++test('dock insertion respects the first, middle, last and empty drop positions', () => {
++  const cards = [
++    { index: 0, top: 100, height: 40 },
++    { index: 1, top: 150, height: 80 },
++  ];
++  assert.equal(getTaskDropIndex(90, cards, 2), 0);
++  assert.equal(getTaskDropIndex(125, cards, 2), 1);
++  assert.equal(getTaskDropIndex(200, cards, 2), 2);
++  assert.equal(getTaskDropIndex(200, [], 0), 0);
++});
++
++test('queue execution keeps the checked tasks in list order; single mode ignores checks', () => {
++  const tasks = [
++    { id: 'a', taskName: 'A', enabled: false, expanded: false, optionValues: {} },
++    { id: 'b', taskName: 'B', enabled: true, expanded: false, optionValues: {} },
++    { id: 'c', taskName: 'C', enabled: true, expanded: false, optionValues: {} },
++  ];
++  assert.deepEqual(
++    filterTasksForRun(tasks).map((task) => task.id),
++    ['b', 'c'],
++  );
++  assert.deepEqual(
++    filterTasksForRun(tasks, { singleTaskId: 'a' }).map((task) => task.id),
++    ['a'],
++  );
++});
++
++test('a fresh install creates single and queue tabs and keeps LaunchGame unchecked by default', () => {
++  const task = {
++    id: 'a',
++    taskName: 'LaunchGame',
++    enabled: false,
++    expanded: false,
++    optionValues: {},
++  };
++  const tabs = normalizeMaaRocoTabs([], [task], { single: 'Single', queue: 'Queue' }, {});
++  assert.deepEqual(
++    tabs.map((tab) => tab.maarocoMode),
++    ['single', 'queue'],
++  );
++  assert.deepEqual(tabs[0].selectedTasks, [task]);
++  assert.equal(tabs[1].selectedTasks[0].taskName, 'LaunchGame');
++  assert.equal(tabs[1].selectedTasks[0].enabled, false);
++  assert.notEqual(tabs[1].selectedTasks[0].id, tabs[0].selectedTasks[0].id);
++});
++
++test('an explicitly empty saved queue stays empty', () => {
++  const task = {
++    id: 'a',
++    taskName: 'LaunchGame',
++    enabled: false,
++    expanded: false,
++    optionValues: {},
++  };
++  const queue = {
++    id: 'queue',
++    name: 'Queue',
++    maarocoMode: 'queue' as const,
++    selectedTasks: [],
++    isRunning: false,
++  };
++  const tabs = normalizeMaaRocoTabs([queue], [task], { single: 'Single', queue: 'Queue' }, {});
++  assert.deepEqual(tabs[1].selectedTasks, []);
++});
++
++test('restoring fixed tabs preserves user options, queue order, custom tabs and running state', () => {
++  const savedTask = {
++    id: 'saved',
++    taskName: 'A',
++    enabled: false,
++    expanded: true,
++    optionValues: { choice: { type: 'select' as const, caseName: 'saved' } },
++  };
++  const newTask = { id: 'new', taskName: 'B', enabled: true, expanded: false, optionValues: {} };
++  const single = {
++    id: 'single',
++    name: 'old',
++    maarocoMode: 'single' as const,
++    selectedTasks: [savedTask],
++    isRunning: true,
++  };
++  const queue = {
++    id: 'queue',
++    name: 'old',
++    maarocoMode: 'queue' as const,
++    selectedTasks: [newTask, savedTask],
++    isRunning: false,
++  };
++  const custom = { id: 'custom', name: 'My config', selectedTasks: [savedTask], isRunning: false };
++  const tabs = normalizeMaaRocoTabs(
++    [single, queue, custom],
++    [{ ...savedTask, id: 'default' }, newTask],
++    { single: 'Single', queue: 'Queue' },
++    {},
++  );
++  assert.deepEqual(tabs[0].selectedTasks, [savedTask, newTask]);
++  assert.equal(tabs[0].isRunning, true);
++  assert.deepEqual(tabs[1].selectedTasks, [newTask, savedTask]);
++  assert.equal(tabs[2], custom);
++  assert.deepEqual(single.selectedTasks, [savedTask]);
++});
++
++test('backend task hints are localized while unrelated errors keep their original messages', () => {
++  assert.equal(
++    getMaaRocoErrorKey('missing [[hint:maaroco_game_window_missing]]'),
++    'maaroco.errors.gameWindowMissing',
++  );
++  assert.equal(
++    getMaaRocoErrorKey('stopped [[hint:maaroco_queue_cancelled]]'),
++    'maaroco.errors.queueCancelled',
++  );
++  assert.equal(getMaaRocoErrorKey('some other error'), undefined);
++});
++
++test('task ID ownership takes priority over the visible tab and the currently running tab', () => {
++  const instances = [
++    { id: 'queue', isRunning: false },
++    { id: 'single', isRunning: true },
++  ];
++  assert.equal(
++    resolveCallbackInstanceId('MaaRoco', 'single', instances, { queue: { 42: 'queue-task' } }, 42),
++    'queue',
++  );
++});
++
++test('callbacks arriving before task ID synchronization follow the only running tab', () => {
++  const instances = [
++    { id: 'queue', isRunning: true },
++    { id: 'single', isRunning: false },
++  ];
++  assert.equal(resolveCallbackInstanceId('MaaRoco', 'single', instances, {}, 42), 'queue');
++  assert.equal(resolveCallbackInstanceId('MaaRoco', null, instances, {}), 'queue');
++});
++
++test('ambiguous or stopped runs keep the visible-tab fallback', () => {
++  const instances = [
++    { id: 'queue', isRunning: true },
++    { id: 'single', isRunning: true },
++  ];
++  assert.equal(resolveCallbackInstanceId('MaaRoco', 'single', instances, {}, 42), 'single');
++  assert.equal(
++    resolveCallbackInstanceId(
++      'MaaRoco',
++      'single',
++      instances.map((instance) => ({ ...instance, isRunning: false })),
++      {},
++      42,
++    ),
++    'single',
++  );
++});
++
++test('callbacks for a removed tab do not recreate that tab through stale mappings', () => {
++  const instances = [{ id: 'single', isRunning: false }];
++  assert.equal(
++    resolveCallbackInstanceId('MaaRoco', 'single', instances, { removed: { 42: 'old-task' } }, 42),
++    'single',
++  );
++});
++
++test('other projects preserve upstream routing to the active tab', () => {
++  const instances = [
++    { id: 'queue', isRunning: true },
++    { id: 'single', isRunning: false },
++  ];
++  assert.equal(
++    resolveCallbackInstanceId('OtherProject', 'single', instances, { queue: { 42: 'task' } }, 42),
++    'single',
++  );
++  assert.equal(resolveCallbackInstanceId(undefined, null, instances, {}, 42), null);
++});

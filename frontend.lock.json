@@ -1,0 +1,10 @@
+{
+  "flavor": "mxu",
+  "repository": "https://github.com/MistEO/MXU.git",
+  "commit": "9fa8cc51e8ff8cd89d99f3ea55fe3a7a82e6ede3",
+  "version": "v2.7.1",
+  "patch": "tools/frontend/mxu.patch",
+  "target": "win-x64",
+  "rust_target": "x86_64-pc-windows-msvc",
+  "package_manager": "pnpm@10.28.0"
+}

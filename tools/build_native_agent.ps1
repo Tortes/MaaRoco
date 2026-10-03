@@ -10,7 +10,15 @@ $installPath = [IO.Path]::GetFullPath($InstallRoot)
 $buildPath = [IO.Path]::GetFullPath($BuildRoot)
 $sdkPath = [IO.Path]::GetFullPath($SdkRoot)
 $sourcePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../agent"))
-& $CMake -S $sourcePath -B $buildPath "-DMAA_SDK=$sdkPath" -DCMAKE_BUILD_TYPE=Release
+$nativeDestination = "runtimes/win-x64/native"
+$frontendLockPath = Join-Path $PSScriptRoot "../frontend.lock.json"
+if (Test-Path -LiteralPath $frontendLockPath) {
+    $frontendLock = Get-Content -LiteralPath $frontendLockPath -Raw | ConvertFrom-Json
+    if ($frontendLock.PSObject.Properties.Name -contains 'flavor' -and $frontendLock.flavor -eq 'mxu') {
+        $nativeDestination = "maafw"
+    }
+}
+& $CMake -S $sourcePath -B $buildPath "-DMAA_SDK=$sdkPath" "-DROCO_NATIVE_DEST=$nativeDestination" -DCMAKE_BUILD_TYPE=Release
 if ($LASTEXITCODE -ne 0) { throw "Native Agent configuration failed" }
 & $CMake --build $buildPath --config Release --parallel
 if ($LASTEXITCODE -ne 0) { throw "Native Agent build failed" }
@@ -21,6 +29,6 @@ if ($LASTEXITCODE -ne 0) { throw "Native Agent strategy tests failed" }
 & $CMake --install $buildPath --config Release --prefix $installPath
 if ($LASTEXITCODE -ne 0) { throw "Native Agent installation failed" }
 foreach ($name in @("MaaRocoAgent", "MaaRocoRunner")) {
-    & (Join-Path $installPath "runtimes/win-x64/native/$name.exe") --check
+    & (Join-Path $installPath "$nativeDestination/$name.exe") --check
     if ($LASTEXITCODE -ne 0) { throw "$name failed to load packaged framework libraries" }
 }

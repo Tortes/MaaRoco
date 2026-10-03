@@ -19,7 +19,7 @@ def main():
     root = args.install_root.resolve()
     windows = sys.platform == "win32"
     rid = "win-x64" if windows else ("osx-arm64" if platform.machine() == "arm64" else "osx-x64")
-    binary = root / f"runtimes/{rid}/native"
+    binary = root / "maafw" if windows and (root / "maafw").is_dir() else root / f"runtimes/{rid}/native"
     executable = "MaaRocoAgent.exe" if windows else "MaaRocoAgent"
     creationflags = subprocess.CREATE_NO_WINDOW if windows else 0
     os.environ["MAAFW_BINARY_PATH"] = str(binary)

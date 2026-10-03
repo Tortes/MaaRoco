@@ -6,7 +6,6 @@ env:
   # - 设置 VERSION 为具体版本号时（如 v1.2.3），下载指定版本
   MAAFW_REPOSITORY: "MaaXYZ/MaaFramework"
   MAAFW_VERSION: "v5.13.0"
-  MFAA_VERSION: ""
 
 on:
   push:
@@ -18,6 +17,8 @@ on:
       - ".github/workflows/install.yml"
       - "assets/**"
       - "tools/build_native_agent.ps1"
+      - "tools/frontend/**"
+      - "frontend.lock.json"
       - "tools/requirements.txt"
       - "agent/**"
       - "**.py"
@@ -28,6 +29,8 @@ on:
       - ".github/workflows/install.yml"
       - "assets/**"
       - "tools/build_native_agent.ps1"
+      - "tools/frontend/**"
+      - "frontend.lock.json"
       - "tools/requirements.txt"
       - "agent/**"
       - "**.py"
@@ -121,75 +124,15 @@ jobs:
 
           rm -f "$archive_path"
 
-      - name: Download MFAAvalonia
-        if: matrix.os != 'android'
-        id: download_mfa
-        uses: robinraju/release-downloader@v1
-        with:
-          repository: SweetSmellFox/MFAAvalonia
-          fileName: "MFAAvalonia-*-${{ (matrix.os == 'win' && 'win') || (matrix.os == 'macos' && 'osx') || (matrix.os == 'linux' && 'linux') }}-${{ (matrix.arch == 'x86_64' && 'x64') || (matrix.arch == 'aarch64' && 'arm64') }}*"
-          latest: ${{ env.MFAA_VERSION == '' }}
-          tag: ${{ env.MFAA_VERSION }}
-          out-file-path: "MFA"
-          extract: true
-
-      - name: Clean up MFAAvalonia archive
-        if: matrix.os != 'android'
+      - name: Install base resources and pinned runtime
         shell: bash
         run: |
-          ARCHIVE_FILE_PATH="${{ fromJson(steps.download_mfa.outputs.downloaded_files)[0] }}"
-          rm -f "${ARCHIVE_FILE_PATH}"
-          echo "Archive cleanup command executed for MFAAvalonia."
-
-      - name: Apply MaaRoco branding to Windows executable
-        if: matrix.os == 'win' && matrix.arch == 'x86_64'
-        shell: bash
-        run: |
-          readonly RCEDIT_SHA256="3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a"
-          curl -fL --retry 3 \
-            https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe \
-            -o rcedit.exe
-          echo "$RCEDIT_SHA256  rcedit.exe" | sha256sum --check --strict
-
-          if ! command -v wine >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y wine
-          fi
-
-          WINEDEBUG=-all wine ./rcedit.exe MFA/MFAAvalonia.exe \
-            --set-icon assets/locales/MaaRoco.ico \
-            --set-version-string ProductName MaaRoco \
-            --set-version-string CompanyName MaaRoco \
-            --set-version-string FileDescription MaaRoco \
-            --set-version-string InternalName MaaRoco \
-            --set-version-string OriginalFilename MaaRoco.exe
-
-      - name: Remove built-in runtime in MFA
-        if: matrix.os != 'android'
-        shell: bash
-        run: |
-          rm -rf MFA/runtimes
-      
-      - name: Install
-        shell: bash
-        run: |
-          if [[ "${{ matrix.os }}" != "android" ]]; then
-            if [ -d "MFA" ]; then
-              echo "Copying MFA files to install directory..."
-              mkdir -p install
-              rsync -av --ignore-existing MFA/ install/
-              echo "MFA files copied successfully."
-            else
-              echo "MFA directory not found, skipping copy."
-            fi
-          else
-            echo "Skipping copy MFA for Android."
-          fi
-
-          cd tools/
-          python -m pip install -r ./requirements.txt
-          python ./install.py ${{ needs.meta.outputs.tag }} ${{ matrix.os }} ${{ matrix.arch }} --skip-agent
-          cd ..
+          python -m pip install -r tools/requirements.txt
+          python -m unittest discover -s tools -p 'test_mxu*.py'
+          python -m unittest discover -s tools -p test_migrate_mxu_config.py
+          python -m unittest discover -s tools -p test_install.py
+          python -m unittest discover -s tools -p test_native_package.py
+          python tools/install.py ${{ needs.meta.outputs.tag }} ${{ matrix.os }} ${{ matrix.arch }} --skip-agent --skip-frontend
 
       - uses: actions/upload-artifact@v4
         with:
@@ -221,13 +164,40 @@ jobs:
           name: MaaRoco-native-sdk
           path: deps
 
-      - name: Build, test and install native Agent
-        shell: pwsh
-        run: ./tools/build_native_agent.ps1
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.28.0"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            build/frontend/cargo
+            build/frontend/MXU/src-tauri/target
+          key: mxu-win-x64-${{ hashFiles('frontend.lock.json', 'tools/frontend/mxu.patch') }}
+          restore-keys: mxu-win-x64-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12.10"
+
+      - name: Build and install MaaRoco task frontend
+        shell: pwsh
+        run: |
+          python -m pip install -r tools/requirements.txt
+          python tools/install.py ${{ needs.meta.outputs.tag }} win x86_64 --frontend-only
+          if ($LASTEXITCODE -ne 0) { throw "MaaRoco frontend build failed" }
+
+      - name: Build, test and install native Agent
+        shell: pwsh
+        run: ./tools/build_native_agent.ps1
 
       - name: Test native Agent IPC with synthetic frames
         shell: pwsh
@@ -242,12 +212,24 @@ jobs:
           python tools/validate_native_package.py install
           if ($LASTEXITCODE -ne 0) { throw "Release package validation failed" }
           $interface = Get-Content ./install/interface.json -Raw | ConvertFrom-Json
-          if ($interface.agent.child_exec -ne "./runtimes/win-x64/native/MaaRocoAgent.exe") {
+          if ($interface.agent.child_exec -ne "./maafw/MaaRocoAgent.exe") {
             throw "Unexpected Agent executable: $($interface.agent.child_exec)"
           }
           foreach ($legacy in @("python", "agent", "resource/model/detect/pipa_bird.onnx", "resource/pipeline/PipaBirdThrow.json")) {
             if (Test-Path (Join-Path ./install $legacy)) { throw "Legacy runtime packaged: $legacy" }
           }
+
+      - name: Keep release archives free of user configuration
+        shell: pwsh
+        run: |
+          # First startup creates both modes or migrates the user's existing MFA configuration.
+          # Shipping generated config would overwrite settings and bypass that migration.
+          $packageRoot = (Resolve-Path -LiteralPath ./install).Path
+          $configRoot = [IO.Path]::GetFullPath((Join-Path $packageRoot 'config'))
+          if (-not $configRoot.StartsWith($packageRoot + [IO.Path]::DirectorySeparatorChar)) {
+            throw "Configuration path outside package root"
+          }
+          if (Test-Path -LiteralPath $configRoot) { Remove-Item -LiteralPath $configRoot -Recurse -Force }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -305,16 +287,3 @@ jobs:
           body: ${{ needs.changelog.outputs.release_body }}
           draft: false
           prerelease: ${{ needs.meta.outputs.is_prerelease == 'true' }}
-
-        # Mirror酱为第三方分发服务，新项目默认关闭
-        # 若有需要请联系 Mirror酱 开通，直接自行开启是无法使用的
-        # https://mirrorchyan.com/
-      - name: Trigger MirrorChyanUploading
-        if: false
-        # if: ${{ github.repository_owner == 'MaaXYZ' }}
-        shell: bash
-        run: |
-          gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan_release.yml -f tag=${{ needs.meta.outputs.tag }}
-          gh workflow run --repo $GITHUB_REPOSITORY mirrorchyan_release_note.yml -f tag=${{ needs.meta.outputs.tag }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

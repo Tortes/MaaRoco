@@ -70,7 +70,8 @@ def start_agent(client, resource, controller, tasker) -> subprocess.Popen[str]:
     environment["MAAFW_BINARY_PATH"] = str(BINARY)
     environment["PATH"] = f"{BINARY};{environment['PATH']}"
     process = subprocess.Popen(
-        [str(INSTALL / "runtimes/win-x64/native/MaaRocoAgent.exe"), client.identifier],
+        [str(INSTALL / ("maafw/MaaRocoAgent.exe" if (INSTALL / "maafw").is_dir()
+                         else "runtimes/win-x64/native/MaaRocoAgent.exe")), client.identifier],
         cwd=INSTALL,
         env=environment,
         stdout=subprocess.DEVNULL,

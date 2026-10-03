@@ -11,7 +11,7 @@
                 "WeGameLoginSource"
             ],
             "controller": [
-                "Win32-Launcher"
+                "Win32-Interception"
             ],
             "group": [
                 "assist"
